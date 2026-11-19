@@ -11,6 +11,10 @@ Interactive **256-color Prompt Theme Picker (64 themes)**, **Dual Powerline Sepa
 
 Built with **100% Python `>= 3.10` standard library** — **zero external runtime dependencies**.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/hero-prompt-showcase.png" alt="Synth-Shell Theme Studio — Curated 256-Color Prompt Palettes and Dual Powerline Separators" width="100%" />
+</p>
+
 ---
 
 ## Features
@@ -25,6 +29,47 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
   3. **Independent Ending Separator (`dual_separator`)**: Extends `printSegment()` and `combine_elements()` to honor `separator_char_end` right before typed input.
   4. **Full 256-Color Parity (`color_256_parity`)**: Upgrades `getColorCode()` and `getBackgroundCode()` across `synth-shell-prompt.sh`, `alias.sh`, `better-ls.sh`, and `better-history.sh` so indices `0`–`255` and all 16 named colors render identically.
 - **Safe Atomic Writes & Backups**: Preserves your custom layout, padding, and Git symbols when switching colors, with automatic timestamped backups in `~/.config/synth-shell/backups/` and portable JSON presets (`export` / `import`).
+
+---
+
+## Screenshots
+
+### Interactive 2-Column Terminal Picker (`synth-shell-theme`)
+
+Browse all 64 palettes side-by-side in your terminal with live 256-color swatches, 3-segment & 6-segment DevOps prompt previews, instant `/search`, and 1-key theme switching:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/tui-theme-picker.png" alt="Interactive 2-Column Terminal Theme Picker (synth-shell-theme)" width="100%" />
+</p>
+
+### Live Browser Web Studio (`synth-shell-theme web`)
+
+Prefer a visual workbench? Launch the zero-dependency local Web Studio to preview themes, mix dual Powerline separators, reorder prompt segments, and manage runtime speed patches & backups in 1 click:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/web-studio-themes.png" alt="Synth-Shell Theme Web Studio — 64 Color Themes and Sticky Live Prompt Workbench" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <strong>Dual Separators &amp; 48 Curated Presets</strong><br /><br />
+      <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/web-studio-separators.png" alt="Web Studio — Dual Powerline Separators Tab" width="100%" />
+    </td>
+    <td width="50%" align="center">
+      <strong>Segment Toggles, Runtime Optimizer &amp; Backups</strong><br /><br />
+      <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/web-studio-optimizer.png" alt="Web Studio — Layout, Segments and Runtime Optimizer Tab" width="100%" />
+    </td>
+  </tr>
+</table>
+
+### 60+ Nerd Font & Dual Separator Cheat-Sheet (`synth-shell-separator --palette`)
+
+Mix any internal divider (e.g. rounded capsule, diagonal slant, wave, pixel) with an independent ending cap (e.g. classic arrow, lightning bolt, diamond sparkle):
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mvsoares/synth-shell-theme/main/docs/screenshots/tui-separator-palette.png" alt="60+ Nerd Font Character Palette and Dual Separator Mix Examples" width="780" />
+</p>
 
 ---
 
