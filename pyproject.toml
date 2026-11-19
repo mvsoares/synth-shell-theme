@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synth-shell-theme"
+version = "1.0.0"
+description = "Interactive 256-color Prompt Theme Picker (64 themes), Dual Powerline Separator Editor (48 presets + 60+ Nerd Font glyphs), Runtime Optimizer, and Live Web Studio for synth-shell."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Marcus Vinícius Soares" },
+]
+keywords = [
+    "synth-shell",
+    "bash",
+    "prompt",
+    "powerline",
+    "terminal",
+    "theme",
+    "nerd-fonts",
+    "tui",
+    "256-color",
+    "customizer",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Shells",
+    "Topic :: Terminals",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/mvsoares/synth-shell-theme"
+Repository = "https://github.com/mvsoares/synth-shell-theme"
+Issues = "https://github.com/mvsoares/synth-shell-theme/issues"
+
+[project.scripts]
+synth-shell-theme = "synth_shell_theme.cli:main"
+synth-shell-separator = "synth_shell_theme.cli:main_separator"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+synth_shell_theme = ["themes/*.conf", "assets/*.html"]

@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include src/synth_shell_theme/themes *.conf
+recursive-include src/synth_shell_theme/assets *.html

@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synth-Shell Theme Studio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0c10;
+      --panel: #12161f;
+      --panel-elev: #171c28;
+      --card: #151923;
+      --card-hover: #1b2130;
+      --border: #262e40;
+      --border-strong: #394663;
+      --accent: #58a6ff;
+      --accent-hover: #79b8ff;
+      --success: #3fb950;
+      --warn: #d29922;
+      --text: #eef2f8;
+      --muted: #9aa5b8;
+      --soft: #6e7a90;
+      --mono: "JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", "CaskaydiaCove Nerd Font", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top right, #131b2e 0%, var(--bg) 45%);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.45;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1480px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 20px 0 56px;
+    }
+
+    /* Top Header */
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, 0.14);
+      border: 1px solid rgba(88, 166, 255, 0.35);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-elev);
+      color: var(--text);
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.14s ease;
+    }
+
+    button:hover {
+      border-color: var(--border-strong);
+      background: #202738;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #07101d;
+      font-weight: 700;
+    }
+
+    button.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    button.sm {
+      padding: 5px 11px;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+
+    /* Sticky Live Workbench */
+    .workbench {
+      position: sticky;
+      top: 10px;
+      z-index: 40;
+      background: rgba(18, 22, 31, 0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      padding: 16px 18px;
+      margin-bottom: 20px;
+      box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
+    }
+
+    .wb-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .wb-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #0d1017;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill strong { color: var(--text); font-family: var(--mono); }
+
+    .terminal-screen {
+      background: #040507;
+      border: 1px solid #222938;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 13.5px;
+      overflow-x: auto;
+    }
+
+    .term-row {
+      white-space: nowrap;
+      line-height: 1.55;
+    }
+
+    .term-row + .term-row {
+      margin-top: 10px;
+    }
+
+    .seg {
+      display: inline-block;
+      padding: 2px 9px;
+      font-weight: 700;
+    }
+
+    .sep-glyph {
+      display: inline-block;
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .cmd-text {
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .newline-connector {
+      color: #6b768c;
+      user-select: none;
+    }
+
+    /* Navigation Tabs */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+
+    .tab-btn {
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+    }
+
+    .tab-btn.active {
+      background: var(--panel-elev);
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: center;
+      padding: 14px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 16px;
+    }
+
+    input[type="text"], input[type="search"] {
+      background: #0b0e14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 13.5px;
+      min-width: 250px;
+    }
+
+    input[type="text"]:focus, input[type="search"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .toggle-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .badge-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .badge-chip {
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .badge-chip.active {
+      background: rgba(88, 166, 255, 0.18);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /* Theme Grid */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+      gap: 16px;
+    }
+
+    .theme-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .theme-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+
+    .theme-card.is-active {
+      border-color: var(--success);
+      box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35);
+    }
+
+    .card-head {
+      padding: 14px 16px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .card-num {
+      color: var(--soft);
+      font-family: var(--mono);
+      font-size: 12px;
+      margin-right: 6px;
+    }
+
+    .card-desc {
+      margin: 4px 0 0;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+
+    .card-badge {
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      background: #0d1017;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .card-term {
+      background: #040507;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      overflow-x: auto;
+      border-top: 1px solid #1d2331;
+      border-bottom: 1px solid #1d2331;
+    }
+
+    .card-foot {
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatches {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .swatch-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    /* Separators Studio */
+    .sep-category {
+      margin-bottom: 22px;
+    }
+
+    .sep-category h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: var(--accent);
+    }
+
+    .sep-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 10px;
+    }
+
+    .sep-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 13px;
+      cursor: pointer;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+
+    .sep-card:hover {
+      border-color: var(--accent);
+      background: var(--card-hover);
+    }
+
+    .sep-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .sep-glyph-big {
+      font-family: var(--mono);
+      font-size: 20px;
+      margin-right: 8px;
+    }
+
+    .sep-code {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--soft);
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+      gap: 8px;
+    }
+
+    .glyph-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      text-align: left;
+    }
+
+    .glyph-btn:hover { border-color: var(--accent); }
+    .glyph-char { font-family: var(--mono); font-size: 18px; min-width: 22px; text-align: center; }
+    .glyph-meta { font-size: 11px; color: var(--muted); line-height: 1.25; }
+    .glyph-meta code { color: var(--accent); display: block; font-family: var(--mono); }
+
+    /* Layout & Patches */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+    }
+
+    .panel-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .panel-box h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .panel-box p {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .seg-toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .seg-pill {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      border: 1px solid var(--border);
+      background: #0b0e14;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .seg-pill.enabled {
+      background: rgba(88, 166, 255, 0.16);
+      border-color: var(--accent);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .patch-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .patch-item:last-child { border-bottom: none; }
+
+    .status-ok { color: var(--success); font-weight: 700; font-family: var(--mono); font-size: 12px; }
+    .status-warn { color: var(--warn); font-weight: 700; font-family: var(--mono); font-size: 12px; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: #13261b;
+      border: 1px solid var(--success);
+      color: #d8ffe2;
+      font-size: 13.5px;
+      font-weight: 600;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: all 0.2s ease;
+      z-index: 100;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-badge" id="version-badge">Studio</span>
+        <h1>Synth-Shell Theme Studio</h1>
+      </div>
+      <div class="top-actions">
+        <button id="btn-copy-reload" title="Copy Bash reload command">Copy Reload Cmd</button>
+        <button id="btn-undo" title="Restore latest configuration backup">Undo / Restore</button>
+        <button class="primary" id="btn-apply-active">Apply Studio Selection</button>
+      </div>
+    </header>
+
+    <!-- Sticky Live Prompt Workbench -->
+    <section class="workbench" aria-label="Live Prompt Workbench">
+      <div class="wb-meta">
+        <div class="wb-pills">
+          <span class="pill">Theme: <strong id="wb-theme-name">Loading…</strong></span>
+          <span class="pill">Internal Sep: <strong id="wb-int-sep"></strong></span>
+          <span class="pill">Ending Sep: <strong id="wb-end-sep"></strong></span>
+          <span class="pill">Format: <strong id="wb-format">HOST PWD GIT PYENV TF KUBE</strong></span>
+        </div>
+        <div class="wb-pills">
+          <label class="toggle-label">
+            <input type="checkbox" id="chk-force-white" />
+            High-Contrast White Text
+          </label>
+          <label class="toggle-label">
+            <input type="checkbox" id="chk-keep-input" />
+            Keep Current Input Color
+          </label>
+        </div>
+      </div>
+      <div class="terminal-screen" id="live-workbench-screen"></div>
+    </section>
+
+    <!-- Tabs -->
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="themes">64 Color Themes</button>
+      <button class="tab-btn" data-tab="separators">Dual Separators &amp; 60+ Nerd Font Glyphs</button>
+      <button class="tab-btn" data-tab="layout">Layout, Segments &amp; Runtime Optimizer</button>
+    </nav>
+
+    <!-- TAB 1: 64 Themes -->
+    <section class="tab-panel active" id="tab-themes">
+      <div class="toolbar">
+        <input type="search" id="theme-search" placeholder="Search 64 themes by name, slug, or style…" />
+        <span id="theme-count-label" style="font-size:13px;color:var(--muted);">64 themes</span>
+      </div>
+      <div class="badge-bar" id="badge-filter-bar"></div>
+      <div class="theme-grid" id="theme-grid"></div>
+    </section>
+
+    <!-- TAB 2: Dual Separators -->
+    <section class="tab-panel" id="tab-separators">
+      <div class="toolbar">
+        <strong style="font-size:13.5px;">Click Target:</strong>
+        <label class="toggle-label"><input type="radio" name="sep-target" value="both" checked /> Both (Internal + Ending)</label>
+        <label class="toggle-label"><input type="radio" name="sep-target" value="internal" /> Internal Separator Only</label>
+        <label class="toggle-label"><input type="radio" name="sep-target" value="end" /> Ending Separator Only</label>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <input type="text" id="custom-sep-input" placeholder="Custom hex (E0B4, F0E7) or glyph…" style="min-width:220px;" />
+          <button id="btn-apply-custom-sep">Use Custom</button>
+        </div>
+      </div>
+      <div id="sep-categories-root"></div>
+      <div class="panel-box" style="margin-top:20px;">
+        <h3>60+ Nerd Font &amp; Unicode Character Matrix</h3>
+        <p>Click any glyph below to assign it to your selected separator target and preview immediately.</p>
+        <div id="palette-matrix-root"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Layout & Runtime Patches -->
+    <section class="tab-panel" id="tab-layout">
+      <div class="settings-grid">
+        <div class="panel-box">
+          <h3>Active Prompt Segments &amp; Layout</h3>
+          <p>Toggle which segments appear in <code>format="..."</code> and control 2-line prompt rendering.</p>
+          <div class="seg-toggles" id="segment-toggles"></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0;">
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-two-line" checked />
+              Command on new line (<code>enable_command_on_new_line="true"</code>)
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-vert-pad" checked />
+              Enable vertical padding between commands (<code>enable_vertical_padding="true"</code>)
+            </label>
+            <label class="toggle-label" style="margin-top:4px;">
+              Max PWD length (<code id="lbl-max-pwd">35</code> chars):
+              <input type="range" id="rng-max-pwd" min="15" max="80" value="35" style="width:160px;" />
+            </label>
+          </div>
+          <button class="primary" id="btn-save-layout">Save Layout Settings</button>
+        </div>
+
+        <div class="panel-box">
+          <h3>Runtime Performance &amp; Compatibility Patches</h3>
+          <p>Idempotent enhancements to <code>~/.config/synth-shell/synth-shell-prompt.sh</code>.</p>
+          <div id="patches-list"></div>
+          <div style="margin-top:14px;">
+            <button class="primary" id="btn-run-patches">Apply Runtime Optimizations</button>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <h3>Timestamped Backups</h3>
+          <p>Every change backs up <code>synth-shell-prompt.config</code> automatically. Restore any snapshot in 1 click.</p>
+          <div id="backups-list" style="max-height:240px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const state = {
+      themes: [],
+      separators: { categories: [], palette: [] },
+      validSegments: [],
+      selectedThemeId: 1,
+      activeThemeId: null,
+      internalSep: { glyph: "\uE0B4", code: "\\uE0B4" },
+      endSep: { glyph: "\uE0B0", code: "\\uE0B0" },
+      formatSegments: ["HOST", "PWD", "GIT", "PYENV", "TF", "KUBE"],
+      twoLine: true,
+      verticalPadding: true,
+      maxPwdChar: 35,
+      forceWhite: false,
+      keepInput: false,
+      searchQuery: "",
+      badgeFilter: "All",
+      patches: {},
+      backups: []
+    };
+
+    const SAMPLE_VALUES = {
+      user: "alex",
+      host: "dev-box",
+      pwd: "~/workspace/service",
+      git: "main ◔",
+      pyenv: ".venv",
+      tf: "prod",
+      kube: "☸ gke-prod",
+      clock: "14:32"
+    };
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("visible");
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => el.classList.remove("visible"), 2800);
+    }
+
+    function getSelectedTheme() {
+      return state.themes.find(t => t.id === state.selectedThemeId) || state.themes[0];
+    }
+
+    function renderPromptHtml(theme, segPairs, cmdText) {
+      if (!theme) return "";
+      const intGlyph = escapeHtml(state.internalSep.glyph || "\uE0B4");
+      const endGlyph = escapeHtml(state.endSep.glyph || intGlyph);
+      let html = "";
+
+      if (state.twoLine) {
+        html += `<span class="newline-connector">┌─</span>`;
+      }
+
+      segPairs.forEach(([segKey, label], idx) => {
+        const segColor = theme.segments[segKey] || { fg: "#ffffff", bg: "#333333" };
+        const fg = state.forceWhite ? "#ffffff" : (segColor.fg || "#ffffff");
+        const bg = segColor.bg || "#222222";
+        html += `<span class="seg" style="background:${bg};color:${fg};">${escapeHtml(label)}</span>`;
+
+        if (idx + 1 < segPairs.length) {
+          const nextKey = segPairs[idx + 1][0];
+          const nextBg = (theme.segments[nextKey] && theme.segments[nextKey].bg) || "#222222";
+          html += `<span class="sep-glyph" style="background:${nextBg};color:${bg};">${intGlyph}</span>`;
+        } else {
+          html += `<span class="sep-glyph" style="background:transparent;color:${bg};">${endGlyph}</span>`;
+        }
+      });
+
+      const inputFg = (theme.segments.input && theme.segments.input.fg) || "#ffffff";
+      if (state.twoLine) {
+        html += `<br/><span class="newline-connector">└─</span> <span style="color:${inputFg};font-weight:700;">$ ${escapeHtml(cmdText)}</span>`;
+      } else {
+        html += `<span class="cmd-text" style="color:${inputFg};">${escapeHtml(cmdText)}</span>`;
+      }
+      return html;
+    }
+
+    function renderWorkbench() {
+      const theme = getSelectedTheme();
+      if (!theme) return;
+      document.getElementById("wb-theme-name").textContent = `#${String(theme.id).padStart(2, "0")} ${theme.name}`;
+      document.getElementById("wb-int-sep").textContent = `${state.internalSep.glyph} (${state.internalSep.code})`;
+      document.getElementById("wb-end-sep").textContent = `${state.endSep.glyph} (${state.endSep.code})`;
+      document.getElementById("wb-format").textContent = state.formatSegments.join(" ");
+
+      const shortPairs = [["host", "dev-box"], ["pwd", "~/workspace/app"], ["git", "main"]];
+      const activePairs = state.formatSegments.map(tok => {
+        const k = tok.toLowerCase();
+        return [k, SAMPLE_VALUES[k] || tok];
+      });
+
+      const screen = document.getElementById("live-workbench-screen");
+      screen.innerHTML = `
+        <div class="term-row">${renderPromptHtml(theme, shortPairs, "git status")}</div>
+        <div class="term-row">${renderPromptHtml(theme, activePairs, "kubectl get pods -n prod")}</div>
+      `;
+    }
+
+    function renderBadges() {
+      const badges = ["All", ...new Set(state.themes.map(t => t.badge).filter(Boolean))];
+      const bar = document.getElementById("badge-filter-bar");
+      bar.innerHTML = badges.map(b => `
+        <button class="badge-chip ${state.badgeFilter === b ? "active" : ""}" data-badge="${escapeHtml(b)}">${escapeHtml(b)}</button>
+      `).join("");
+      bar.querySelectorAll(".badge-chip").forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.badgeFilter = btn.dataset.badge;
+          renderBadges();
+          renderThemeGrid();
+        });
+      });
+    }
+
+    function renderThemeGrid() {
+      const q = state.searchQuery.trim().toLowerCase();
+      const filtered = state.themes.filter(t => {
+        if (state.badgeFilter !== "All" && t.badge !== state.badgeFilter) return false;
+        if (!q) return true;
+        const hay = `${t.id} ${t.name} ${t.slug} ${t.badge} ${t.description}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      document.getElementById("theme-count-label").textContent = `${filtered.length} of ${state.themes.length} themes`;
+      const grid = document.getElementById("theme-grid");
+
+      grid.innerHTML = filtered.map(t => {
+        const isActive = t.id === state.activeThemeId;
+        const swatches = (t.swatch || []).map(c => `<span class="swatch-dot" style="background:${c};"></span>`).join("");
+        const line1 = renderPromptHtml(t, [["host", "dev"], ["pwd", "~/app"], ["git", "main"]], "git status");
+        return `
+          <article class="theme-card ${isActive ? "is-active" : ""}" data-id="${t.id}">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title"><span class="card-num">#${String(t.id).padStart(2, "0")}</span>${escapeHtml(t.name)}</h2>
+                <p class="card-desc">${escapeHtml(t.description)}</p>
+              </div>
+              <span class="card-badge">${isActive ? "✓ Active" : escapeHtml(t.badge)}</span>
+            </div>
+            <div class="card-term"><div class="term-row">${line1}</div></div>
+            <div class="card-foot">
+              <div class="swatches">${swatches}</div>
+              <div style="display:flex;gap:6px;">
+                <button class="sm btn-preview" data-id="${t.id}">Preview</button>
+                <button class="sm primary btn-apply" data-id="${t.id}">Apply Theme</button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      grid.querySelectorAll(".btn-preview").forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.selectedThemeId = Number(btn.dataset.id);
+          renderWorkbench();
+        });
+      });
+
+      grid.querySelectorAll(".btn-apply").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = Number(btn.dataset.id);
+          state.selectedThemeId = id;
+          await applyChanges({
+            theme: id,
+            force_white: state.forceWhite,
+            keep_input: state.keepInput
+          });
+        });
+      });
+    }
+
+    function assignSeparator(glyph, code) {
+      const target = document.querySelector('input[name="sep-target"]:checked').value;
+      if (target === "both" || target === "internal") {
+        state.internalSep = { glyph, code };
+      }
+      if (target === "both" || target === "end") {
+        state.endSep = { glyph, code };
+      }
+      renderWorkbench();
+      renderThemeGrid();
+    }
+
+    function renderSeparatorsTab() {
+      const root = document.getElementById("sep-categories-root");
+      const theme = getSelectedTheme();
+      root.innerHTML = state.separators.categories.map(cat => `
+        <div class="sep-category">
+          <h3>${escapeHtml(cat.name)}</h3>
+          <div class="sep-grid">
+            ${cat.items.map(item => `
+              <div class="sep-card" data-glyph="${escapeHtml(item.glyph)}" data-code="${escapeHtml(item.code)}">
+                <div class="sep-top">
+                  <div><span class="sep-glyph-big">${escapeHtml(item.glyph)}</span><strong>${escapeHtml(item.key)}</strong></div>
+                  <span class="sep-code">${escapeHtml(item.code)}</span>
+                </div>
+                <div style="font-size:12px;color:var(--muted);">${escapeHtml(item.description)}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+
+      root.querySelectorAll(".sep-card").forEach(card => {
+        card.addEventListener("click", async () => {
+          assignSeparator(card.dataset.glyph, card.dataset.code);
+          await applyChanges({
+            internal_separator: state.internalSep.code,
+            end_separator: state.endSep.code
+          });
+        });
+      });
+
+      const matrixRoot = document.getElementById("palette-matrix-root");
+      matrixRoot.innerHTML = state.separators.palette.map(grp => `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px;">${escapeHtml(grp.group)}</div>
+          <div class="palette-grid">
+            ${grp.items.map(ch => `
+              <button class="glyph-btn" data-glyph="${escapeHtml(ch.glyph)}" data-code="${escapeHtml(ch.code)}">
+                <span class="glyph-char">${escapeHtml(ch.glyph)}</span>
+                <span class="glyph-meta"><code>${escapeHtml(ch.code)}</code>${escapeHtml(ch.label)}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+
+      matrixRoot.querySelectorAll(".glyph-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          assignSeparator(btn.dataset.glyph, btn.dataset.code);
+          await applyChanges({
+            internal_separator: state.internalSep.code,
+            end_separator: state.endSep.code
+          });
+        });
+      });
+    }
+
+    function renderLayoutTab() {
+      const segRoot = document.getElementById("segment-toggles");
+      segRoot.innerHTML = state.validSegments.map(seg => {
+        const on = state.formatSegments.includes(seg);
+        return `<button class="seg-pill ${on ? "enabled" : ""}" data-seg="${seg}">${seg}</button>`;
+      }).join("");
+
+      segRoot.querySelectorAll(".seg-pill").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const seg = btn.dataset.seg;
+          if (state.formatSegments.includes(seg)) {
+            if (state.formatSegments.length > 1) {
+              state.formatSegments = state.formatSegments.filter(x => x !== seg);
+            }
+          } else {
+            state.formatSegments.push(seg);
+          }
+          renderLayoutTab();
+          renderWorkbench();
+        });
+      });
+
+      document.getElementById("chk-two-line").checked = state.twoLine;
+      document.getElementById("chk-vert-pad").checked = state.verticalPadding;
+      document.getElementById("rng-max-pwd").value = state.maxPwdChar;
+      document.getElementById("lbl-max-pwd").textContent = state.maxPwdChar;
+
+      const patchDefs = [
+        ["kube_fast", "Zero-subshell Kubernetes context reader (no yq dependency)"],
+        ["git_single_pass", "Single-pass git status check (4x faster prompt)"],
+        ["dual_separator", "Independent ending separator (separator_char_end)"],
+        ["color_256_parity", "Full 256-color & named-color parity across scripts"]
+      ];
+      document.getElementById("patches-list").innerHTML = patchDefs.map(([k, desc]) => {
+        const ok = Boolean(state.patches && state.patches[k]);
+        return `
+          <div class="patch-item">
+            <span>${escapeHtml(desc)}</span>
+            <span class="${ok ? "status-ok" : "status-warn"}">${ok ? "✓ ACTIVE" : "PENDING"}</span>
+          </div>
+        `;
+      }).join("");
+
+      const bList = document.getElementById("backups-list");
+      if (!state.backups.length) {
+        bList.innerHTML = `<div style="font-size:13px;color:var(--soft);">No backups created yet.</div>`;
+      } else {
+        bList.innerHTML = state.backups.slice(0, 12).map(b => `
+          <div class="patch-item">
+            <div>
+              <div style="font-family:var(--mono);font-size:12px;">${escapeHtml(b.name)}</div>
+              <div style="font-size:11px;color:var(--soft);">${escapeHtml(b.modified)}</div>
+            </div>
+            <button class="sm btn-restore-item" data-id="${b.id}">Restore</button>
+          </div>
+        `).join("");
+        bList.querySelectorAll(".btn-restore-item").forEach(btn => {
+          btn.addEventListener("click", () => restoreBackup(Number(btn.dataset.id)));
+        });
+      }
+    }
+
+    function syncFromServerState(srvState, backups) {
+      if (srvState.active_theme_id) {
+        state.activeThemeId = srvState.active_theme_id;
+        state.selectedThemeId = srvState.active_theme_id;
+      }
+      if (srvState.internal_separator) {
+        state.internalSep = srvState.internal_separator;
+      }
+      if (srvState.end_separator) {
+        state.endSep = srvState.end_separator;
+      }
+      if (Array.isArray(srvState.format_segments) && srvState.format_segments.length) {
+        state.formatSegments = srvState.format_segments;
+      }
+      state.twoLine = Boolean(srvState.enable_command_on_new_line);
+      state.verticalPadding = Boolean(srvState.enable_vertical_padding);
+      state.maxPwdChar = Number(srvState.max_pwd_char || 35);
+      state.patches = srvState.patches || {};
+      if (Array.isArray(backups)) state.backups = backups;
+
+      renderWorkbench();
+      renderThemeGrid();
+      renderSeparatorsTab();
+      renderLayoutTab();
+    }
+
+    async function applyChanges(payload) {
+      const resp = await fetch("/api/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        showToast(`Error: ${data.error || "Failed to apply"}`);
+        return;
+      }
+      syncFromServerState(data.state, data.backups);
+      showToast(`Saved to synth-shell-prompt.config (${(data.applied || []).join(", ")})`);
+    }
+
+    async function restoreBackup(target = 1) {
+      const resp = await fetch("/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target })
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        showToast(data.error || "No backup available");
+        return;
+      }
+      syncFromServerState(data.state, data.backups);
+      showToast(`Restored backup: ${data.restored}`);
+    }
+
+    async function initStudio() {
+      const resp = await fetch("/api/bootstrap");
+      const boot = await resp.json();
+      document.getElementById("version-badge").textContent = `Studio v${boot.version}`;
+      state.themes = boot.themes || [];
+      state.separators = boot.separators || { categories: [], palette: [] };
+      state.validSegments = boot.valid_segments || ["USER", "HOST", "PWD", "GIT", "PYENV", "TF", "KUBE", "CLOCK"];
+      renderBadges();
+      syncFromServerState(boot.state || {}, boot.backups || []);
+    }
+
+    // Event bindings
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+      });
+    });
+
+    document.getElementById("theme-search").addEventListener("input", e => {
+      state.searchQuery = e.target.value;
+      renderThemeGrid();
+    });
+
+    document.getElementById("chk-force-white").addEventListener("change", e => {
+      state.forceWhite = e.target.checked;
+      renderWorkbench();
+      renderThemeGrid();
+    });
+
+    document.getElementById("chk-keep-input").addEventListener("change", e => {
+      state.keepInput = e.target.checked;
+    });
+
+    document.getElementById("btn-apply-active").addEventListener("click", () => {
+      applyChanges({
+        theme: state.selectedThemeId,
+        force_white: state.forceWhite,
+        keep_input: state.keepInput,
+        internal_separator: state.internalSep.code,
+        end_separator: state.endSep.code,
+        format: state.formatSegments,
+        enable_command_on_new_line: state.twoLine,
+        enable_vertical_padding: state.verticalPadding,
+        max_pwd_char: state.maxPwdChar
+      });
+    });
+
+    document.getElementById("btn-copy-reload").addEventListener("click", async () => {
+      const cmd = "source ~/.config/synth-shell/synth-shell-prompt.sh";
+      try {
+        await navigator.clipboard.writeText(cmd);
+        showToast(`Copied: ${cmd}`);
+      } catch {
+        showToast(cmd);
+      }
+    });
+
+    document.getElementById("btn-undo").addEventListener("click", () => restoreBackup(1));
+
+    document.getElementById("btn-apply-custom-sep").addEventListener("click", async () => {
+      const raw = document.getElementById("custom-sep-input").value.trim();
+      if (!raw) return;
+      const target = document.querySelector('input[name="sep-target"]:checked').value;
+      const payload = {};
+      if (target === "both" || target === "internal") payload.internal_separator = raw;
+      if (target === "both" || target === "end") payload.end_separator = raw;
+      await applyChanges(payload);
+    });
+
+    document.getElementById("chk-two-line").addEventListener("change", e => {
+      state.twoLine = e.target.checked;
+      renderWorkbench();
+      renderThemeGrid();
+    });
+
+    document.getElementById("chk-vert-pad").addEventListener("change", e => {
+      state.verticalPadding = e.target.checked;
+    });
+
+    document.getElementById("rng-max-pwd").addEventListener("input", e => {
+      state.maxPwdChar = Number(e.target.value);
+      document.getElementById("lbl-max-pwd").textContent = state.maxPwdChar;
+    });
+
+    document.getElementById("btn-save-layout").addEventListener("click", () => {
+      applyChanges({
+        format: state.formatSegments,
+        enable_command_on_new_line: state.twoLine,
+        enable_vertical_padding: state.verticalPadding,
+        max_pwd_char: state.maxPwdChar
+      });
+    });
+
+    document.getElementById("btn-run-patches").addEventListener("click", async () => {
+      const resp = await fetch("/api/patches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tune_defaults: false })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups);
+        const count = (data.changes || []).length;
+        showToast(count ? `Applied ${count} runtime patch(es)` : "All 4 runtime patches already active!");
+      }
+    });
+
+    initStudio();
+  </script>
+</body>
+</html>
