@@ -1,4 +1,11 @@
-# Synth-Shell Theme Studio (`synth-shell-theme`)
+# ✦ Synth-Shell Theme Studio (`synth-shell-theme`)
+
+[![CI](https://github.com/mvsoares/synth-shell-theme/actions/workflows/ci.yml/badge.svg)](https://github.com/mvsoares/synth-shell-theme/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/synth-shell-theme?color=3775A9&logo=pypi&logoColor=white)](https://pypi.org/project/synth-shell-theme/)
+[![Release](https://img.shields.io/github/v/release/mvsoares/synth-shell-theme?color=8b5cf6)](https://github.com/mvsoares/synth-shell-theme/releases)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-0ea5e9)](https://github.com/mvsoares/synth-shell-theme)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](https://github.com/mvsoares/synth-shell-theme/blob/main/LICENSE)
 
 Interactive **256-color Prompt Theme Picker (64 themes)**, **Dual Powerline Separator Editor (48 presets + 60+ Nerd Font glyphs)**, **Runtime Speed Optimizer**, and **Live Web Studio** for [synth-shell](https://github.com/andresgongora/synth-shell).
 
@@ -23,17 +30,31 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
 
 ## Installation
 
-### Recommended (`pipx`)
+### From PyPI (`pipx`, `uv`, or `pip`)
 
 ```bash
+# Recommended: pipx
 pipx install synth-shell-theme
+
+# Or via uv (persistent tool install)
+uv tool install synth-shell-theme
+
+# Zero-install instant run with uvx
+uvx synth-shell-theme
+
+# Or via pip
+pip install --user synth-shell-theme
 ```
 
-Or install from a local clone in editable mode:
+### Local Clone / Editable Development Install
 
 ```bash
-pipx install -e /path/to/synth-shell-theme
+git clone https://github.com/mvsoares/synth-shell-theme.git
+cd synth-shell-theme
+pipx install -e . --force
 ```
+
+Both `synth-shell-theme` (primary CLI) and `synth-shell-separator` (dedicated separator editor) are installed onto your `PATH`.
 
 ### Initialize Runtime Enhancements
 
@@ -127,4 +148,4 @@ python3 -m unittest discover -s tests -v
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](https://github.com/mvsoares/synth-shell-theme/blob/main/LICENSE).
