@@ -274,7 +274,7 @@ def apply_runtime_patches(
 
         if updated != original:
             _backup_script_once(prompt_sh, bdir)
-            prompt_sh.write_text(updated, encoding="utf-8")
+            prompt_sh.write_text(updated, encoding="utf-8", newline="\n")
 
     # 4. 256-color & named-color parity across all synth-shell scripts
     for script_name in ("synth-shell-prompt.sh", "alias.sh", "better-ls.sh", "better-history.sh"):
@@ -286,7 +286,7 @@ def apply_runtime_patches(
             new_txt = _COLOR_BLOCK_RE.sub(lambda _: PATCHED_COLOR_CODES, txt, count=1)
             if new_txt != txt:
                 _backup_script_once(script_file, bdir)
-                script_file.write_text(new_txt, encoding="utf-8")
+                script_file.write_text(new_txt, encoding="utf-8", newline="\n")
                 changes.append(f"color_256_parity:{script_name}")
 
     # Optional sensible prompt config defaults (`init --tune-defaults`)
@@ -319,7 +319,7 @@ def apply_runtime_patches(
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             bdir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(cfg_path, bdir / f"synth-shell-prompt.config.{stamp}.bak")
-            cfg_path.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+            cfg_path.write_text("\n".join(out_lines) + "\n", encoding="utf-8", newline="\n")
             changes.append("tune_defaults")
 
     status = inspect_patches(base)

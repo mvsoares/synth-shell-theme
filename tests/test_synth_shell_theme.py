@@ -181,8 +181,8 @@ class SynthShellThemeTests(unittest.TestCase):
     def test_runtime_patches_idempotent_and_valid_bash(self) -> None:
         prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
         alias_sh = self.cfg_dir / "alias.sh"
-        prompt_sh.write_text(MOCK_UPSTREAM_PROMPT_SH, encoding="utf-8")
-        alias_sh.write_text(MOCK_UPSTREAM_PROMPT_SH.split("getGitBranch()")[0], encoding="utf-8")
+        prompt_sh.write_text(MOCK_UPSTREAM_PROMPT_SH, encoding="utf-8", newline="\n")
+        alias_sh.write_text(MOCK_UPSTREAM_PROMPT_SH.split("getGitBranch()")[0], encoding="utf-8", newline="\n")
 
         before = patches.inspect_patches(self.cfg_dir)
         self.assertTrue(before["prompt_script_found"])
@@ -202,9 +202,18 @@ class SynthShellThemeTests(unittest.TestCase):
         self.assertEqual(res2["changes"], [])
         self.assertTrue(res2["status"]["all_applied"])
 
+        self.assertNotIn("\r\n", prompt_sh.read_bytes().decode("utf-8"))
         if shutil.which("bash"):
-            chk = subprocess.run(["bash", "-n", str(prompt_sh)], capture_output=True, text=True, check=False)
-            self.assertEqual(chk.returncode, 0, msg=chk.stderr)
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                chk = subprocess.run(
+                    ["bash", "-n"],
+                    input=prompt_sh.read_text(encoding="utf-8"),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(chk.returncode, 0, msg=chk.stderr)
 
     def test_apply_theme_separators_layout_backups_and_presets(self) -> None:
         catalog = themes.load_themes()
