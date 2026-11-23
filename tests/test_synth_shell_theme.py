@@ -471,7 +471,8 @@ printMonitorRAM()
                     'AWS_PROFILE=prod-admin getAws; echo ""; '
                     'DOCKER_CONTEXT=remote-gpu getDocker; echo ""; '
                     'SSH_CONNECTION="1 2 3 4" getSsh; echo ""; '
-                    '_SSP_CMD_START_MS=$(( ${EPOCHREALTIME/./} / 1000 - 4250 )); SSP_MIN_DURATION_MS=2000; '
+                    'if [[ -n "${EPOCHREALTIME:-}" ]]; then _SSP_CMD_START_MS=$(( ${EPOCHREALTIME/./} / 1000 - 4250 )); else SECONDS=10; _SSP_CMD_START_MS=5750; fi; '
+                    'SSP_MIN_DURATION_MS=2000; '
                     '_ssp_format_duration_var; echo "$_SSP_DUR"'
                 )
                 seg_res = subprocess.run(["bash", "-c", seg_cmd], capture_output=True, text=True, check=False)
@@ -646,7 +647,7 @@ getEffectCode()
 }
 getPyenv() { echo ""; }
 getTerraform() { echo ""; }
-shortenPath() { echo "$1"; }
+shortenPath() { echo "~/repo"; }
 get_colors_for_element() { echo "white blue bold"; }
 prompt_command_hook() { PS1="$USER"; }
 synth_shell_prompt()
@@ -889,7 +890,7 @@ fi
 getEffectCode() { echo 0; }
 getPyenv() { echo ""; }
 getTerraform() { echo ""; }
-shortenPath() { echo "$1"; }
+shortenPath() { echo "~/repo"; }
 get_colors_for_element() { echo "white blue bold"; }
 prompt_command_hook() { PS1="$USER"; }
 synth_shell_prompt()
@@ -965,7 +966,7 @@ fi
                 cmd = (
                     f'source "{runner}"; '
                     'SSP_ENABLE_OSC133="true"; SSP_RIGHT_ELEMENTS=(CLOCK); SSP_RIGHT_FILL_CHAR="─"; '
-                    'SSP_PROMPT_COMM_SEP=$\'\\n\'; SSP_NEW_LINE_LINK_TOP="┌"; SSP_NEW_LINE_LINK_BOTTOM="└"; COLUMNS=100; '
+                    'SSP_PROMPT_COMM_SEP=$\'\\n\'; SSP_NEW_LINE_LINK_TOP="┌"; SSP_NEW_LINE_LINK_BOTTOM="└"; COLUMNS=200; '
                     f'cd "{repo}"; '
                     'GS="$(getGitBranch)"; echo "GIT=$GS"; '
                     'prompt_command_hook; prompt_command_hook; '
