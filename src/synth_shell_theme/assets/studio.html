@@ -610,6 +610,7 @@
       <button class="tab-btn active" data-tab="themes">64 Color Themes</button>
       <button class="tab-btn" data-tab="separators">Dual Separators &amp; 60+ Nerd Font Glyphs</button>
       <button class="tab-btn" data-tab="layout">Layout, Segments &amp; Runtime Optimizer</button>
+      <button class="tab-btn" data-tab="sync">Root, Greeter &amp; Diagnostics</button>
     </nav>
 
     <!-- TAB 1: 64 Themes -->
@@ -647,7 +648,7 @@
       <div class="settings-grid">
         <div class="panel-box">
           <h3>Active Prompt Segments &amp; Layout</h3>
-          <p>Toggle which segments appear in <code>format="..."</code> and control 2-line prompt rendering.</p>
+          <p>Toggle core &amp; v1.1 telemetry/cloud segments in <code>format="..."</code>, prefix icon, text style, and truncation.</p>
           <div class="seg-toggles" id="segment-toggles"></div>
           <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0;">
             <label class="toggle-label">
@@ -658,27 +659,109 @@
               <input type="checkbox" id="chk-vert-pad" checked />
               <span>Enable vertical padding between commands (<code>enable_vertical_padding="true"</code>)</span>
             </label>
-            <label class="toggle-label" style="margin-top:4px;">
-              Max PWD length (<code id="lbl-max-pwd">35</code> chars):
-              <input type="range" id="rng-max-pwd" min="15" max="80" value="35" style="width:160px;" />
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-term-title" checked />
+              <span>Restore terminal tab title (<code>enable_terminal_title="true"</code>)</span>
+            </label>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:4px;">
+              <label class="toggle-label">
+                <span>Prefix:</span>
+                <input type="text" id="inp-prefix" placeholder='e.g. "❯ " or "auto"' style="min-width:130px;padding:5px 9px;font-size:12.5px;" />
+              </label>
+              <label class="toggle-label">
+                <span>Text Effect:</span>
+                <select id="sel-font-effect" style="background:#0b0e14;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:5px 9px;font-size:12.5px;">
+                  <option value="bold">bold</option>
+                  <option value="regular">regular</option>
+                  <option value="italic">italic</option>
+                  <option value="dim">dim</option>
+                </select>
+              </label>
+            </div>
+            <label class="toggle-label">
+              <span>Max PWD (<code id="lbl-max-pwd">35</code>):</span>
+              <input type="range" id="rng-max-pwd" min="15" max="80" value="35" style="width:150px;" />
+            </label>
+            <label class="toggle-label">
+              <span>Max Git branch (<code id="lbl-max-git">0</code>, 0=off):</span>
+              <input type="range" id="rng-max-git" min="0" max="60" value="0" style="width:150px;" />
+            </label>
+            <label class="toggle-label">
+              <span>Max Pyenv (<code id="lbl-max-pyenv">0</code>, 0=off):</span>
+              <input type="range" id="rng-max-pyenv" min="0" max="50" value="0" style="width:150px;" />
+            </label>
+            <label class="toggle-label">
+              <span>Max Kube (<code id="lbl-max-kube">28</code>):</span>
+              <input type="range" id="rng-max-kube" min="10" max="60" value="28" style="width:150px;" />
             </label>
           </div>
-          <button class="primary" id="btn-save-layout">Save Layout Settings</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="primary" id="btn-save-layout">Save Layout Settings</button>
+            <button id="btn-ascii-safe" title="Switch to ASCII-safe separators & Git symbols">ASCII-Safe Mode</button>
+          </div>
         </div>
 
         <div class="panel-box">
-          <h3>Runtime Performance &amp; Compatibility Patches</h3>
-          <p>Idempotent enhancements to <code>~/.config/synth-shell/synth-shell-prompt.sh</code>.</p>
+          <h3>Speed, Git &amp; Runtime Patches (v1.1)</h3>
+          <p>Idempotent zero-fork optimizations &amp; WSL2/monorepo Git guards for <code>synth-shell-prompt.sh</code>.</p>
+          <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:14px;">
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-wsl-fast" checked />
+              <span>Skip untracked Git files on WSL <code>/mnt/*</code></span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-async-git" />
+              <span>Enable async background Git cache (<code>/dev/shm</code>)</span>
+            </label>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+              <label class="toggle-label">
+                <span>Git timeout (ms):</span>
+                <input type="text" id="inp-git-timeout" value="0" style="min-width:74px;width:74px;padding:4px 8px;font-size:12.5px;" />
+              </label>
+              <label class="toggle-label">
+                <span>Min duration (ms):</span>
+                <input type="text" id="inp-min-duration" value="2000" style="min-width:74px;width:74px;padding:4px 8px;font-size:12.5px;" />
+              </label>
+            </div>
+          </div>
           <div id="patches-list"></div>
           <div style="margin-top:14px;">
-            <button class="primary" id="btn-run-patches">Apply Runtime Optimizations</button>
+            <button class="primary" id="btn-run-patches">Apply All v1.1 Runtime Patches</button>
           </div>
         </div>
 
         <div class="panel-box">
           <h3>Timestamped Backups</h3>
           <p>Every change backs up <code>synth-shell-prompt.config</code> automatically. Restore any snapshot in 1 click.</p>
-          <div id="backups-list" style="max-height:240px;overflow-y:auto;"></div>
+          <div id="backups-list" style="max-height:360px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Root, Greeter & Diagnostics -->
+    <section class="tab-panel" id="tab-sync">
+      <div class="settings-grid">
+        <div class="panel-box">
+          <h3>Root Prompt Theme Sync</h3>
+          <p>Generate <code>synth-shell-prompt.root.config</code> matching your active theme with a high-visibility red root accent on <code>USER</code> &amp; <code>HOST</code>.</p>
+          <div id="root-sync-status" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></div>
+          <button class="primary" id="btn-sync-root">Sync Active Theme to Root Config</button>
+        </div>
+
+        <div class="panel-box">
+          <h3>Synth-Shell Greeter Sync &amp; Monitors</h3>
+          <p>Match <code>synth-shell-greeter.config</code> colors to your theme and choose which system monitors appear on login.</p>
+          <div class="seg-toggles" id="greeter-monitor-toggles"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+            <button class="primary" id="btn-sync-greeter">Sync Palette &amp; Save Monitors</button>
+            <button id="btn-greeter-hide-swap">Auto-Hide Swap (Cloud VM)</button>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <h3>Environment &amp; Font Diagnostics</h3>
+          <p>UTF-8 locale and Powerline/Nerd Font readiness for seamless glyph rendering.</p>
+          <div id="diagnostics-list"></div>
         </div>
       </div>
     </section>
@@ -699,11 +782,24 @@
       twoLine: true,
       verticalPadding: true,
       maxPwdChar: 35,
+      maxGitChar: 0,
+      maxPyenvChar: 0,
+      maxKubeChar: 28,
+      promptPrefix: "",
+      fontEffect: "bold",
+      enableTerminalTitle: true,
+      gitSkipUntracked: true,
+      gitTimeoutMs: 0,
+      gitAsyncCache: false,
+      minDurationMs: 2000,
       forceWhite: false,
       keepInput: false,
       searchQuery: "",
       badgeFilter: "All",
       patches: {},
+      greeter: { monitors: [], available_monitors: [] },
+      diagnostics: {},
+      rootConfigExists: false,
       backups: []
     };
 
@@ -715,7 +811,14 @@
       pyenv: ".venv",
       tf: "prod",
       kube: "☸ gke-prod",
-      clock: "14:32"
+      clock: "14:32",
+      status: "✗ 1",
+      duration: "⏱ 3.4s",
+      aws: "☁ prod",
+      gcp: "GCP:my-proj",
+      docker: "🐳 prod",
+      node: "⬢ v22.11",
+      ssh: "⇄ ssh"
     };
 
     function escapeHtml(str) {
@@ -747,13 +850,25 @@
       if (state.twoLine) {
         html += `<span class="newline-connector">┌─</span>`;
       }
+      if (state.promptPrefix) {
+        const pref = state.promptPrefix === "auto" ? " " : state.promptPrefix;
+        html += `<span style="margin-right:4px;color:var(--accent);">${escapeHtml(pref)}</span>`;
+      }
+
+      const effStyle = state.fontEffect === "italic"
+        ? "font-weight:400;font-style:italic;"
+        : (state.fontEffect === "regular" || state.fontEffect === "none")
+          ? "font-weight:400;"
+          : state.fontEffect === "dim"
+            ? "font-weight:400;opacity:0.78;"
+            : "font-weight:700;";
 
       html += `<span class="prompt-strip">`;
       segPairs.forEach(([segKey, label], idx) => {
         const segColor = theme.segments[segKey] || { fg: "#ffffff", bg: "#333333" };
         const fg = state.forceWhite ? "#ffffff" : (segColor.fg || "#ffffff");
         const bg = segColor.bg || "#222222";
-        html += `<span class="seg" style="background:${bg};color:${fg};">${escapeHtml(label)}</span>`;
+        html += `<span class="seg" style="background:${bg};color:${fg};${effStyle}">${escapeHtml(label)}</span>`;
 
         if (idx + 1 < segPairs.length) {
           const nextKey = segPairs[idx + 1][0];
@@ -959,14 +1074,33 @@
 
       document.getElementById("chk-two-line").checked = state.twoLine;
       document.getElementById("chk-vert-pad").checked = state.verticalPadding;
+      document.getElementById("chk-term-title").checked = state.enableTerminalTitle;
+      document.getElementById("inp-prefix").value = state.promptPrefix || "";
+      document.getElementById("sel-font-effect").value = state.fontEffect || "bold";
       document.getElementById("rng-max-pwd").value = state.maxPwdChar;
       document.getElementById("lbl-max-pwd").textContent = state.maxPwdChar;
+      document.getElementById("rng-max-git").value = state.maxGitChar;
+      document.getElementById("lbl-max-git").textContent = state.maxGitChar;
+      document.getElementById("rng-max-pyenv").value = state.maxPyenvChar;
+      document.getElementById("lbl-max-pyenv").textContent = state.maxPyenvChar;
+      document.getElementById("rng-max-kube").value = state.maxKubeChar;
+      document.getElementById("lbl-max-kube").textContent = state.maxKubeChar;
+      document.getElementById("chk-wsl-fast").checked = state.gitSkipUntracked;
+      document.getElementById("chk-async-git").checked = state.gitAsyncCache;
+      document.getElementById("inp-git-timeout").value = state.gitTimeoutMs;
+      document.getElementById("inp-min-duration").value = state.minDurationMs;
 
       const patchDefs = [
-        ["kube_fast", "Zero-subshell Kubernetes context reader (no yq dependency)"],
+        ["kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"],
         ["git_single_pass", "Single-pass git status check (4x faster prompt)"],
+        ["git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"],
+        ["zero_fork_render", "Zero-fork pure-Bash segment renderer (~20 fewer subshells)"],
         ["dual_separator", "Independent ending separator (separator_char_end)"],
-        ["color_256_parity", "Full 256-color & named-color parity across scripts"]
+        ["color_256_parity", "Full 256-color & named-color parity + italic/regular effects"],
+        ["v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH)"],
+        ["pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"],
+        ["utf8_ps1_guard", "UTF-8 PS1 escape guard (prevents \\uE0B0 username bug)"],
+        ["interactive_guard", "Non-interactive shell safety guard (scp/sftp/rsync safe)"]
       ];
       document.getElementById("patches-list").innerHTML = patchDefs.map(([k, desc]) => {
         const ok = Boolean(state.patches && state.patches[k]);
@@ -997,7 +1131,52 @@
       }
     }
 
-    function syncFromServerState(srvState, backups) {
+    function renderSyncTab() {
+      const rootEl = document.getElementById("root-sync-status");
+      rootEl.innerHTML = state.rootConfigExists
+        ? `<span class="status-ok">✓ synth-shell-prompt.root.config present</span>`
+        : `<span class="status-warn">Not created yet — click below to generate from active theme</span>`;
+
+      const monRoot = document.getElementById("greeter-monitor-toggles");
+      const avail = (state.greeter && state.greeter.available_monitors) || [];
+      const active = (state.greeter && state.greeter.monitors) || [];
+      monRoot.innerHTML = avail.map(m => {
+        const on = active.includes(m);
+        return `<button class="seg-pill ${on ? "enabled" : ""}" data-mon="${escapeHtml(m)}">${escapeHtml(m)}</button>`;
+      }).join("");
+      monRoot.querySelectorAll(".seg-pill").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const m = btn.dataset.mon;
+          if (state.greeter.monitors.includes(m)) {
+            state.greeter.monitors = state.greeter.monitors.filter(x => x !== m);
+          } else {
+            state.greeter.monitors.push(m);
+          }
+          renderSyncTab();
+        });
+      });
+
+      const dList = document.getElementById("diagnostics-list");
+      const loc = (state.diagnostics && state.diagnostics.locale) || {};
+      const nf = (state.diagnostics && state.diagnostics.nerd_fonts) || {};
+      const samples = Array.isArray(nf.samples) && nf.samples.length ? ` (${nf.samples.slice(0, 3).join(", ")})` : "";
+      dList.innerHTML = `
+        <div class="patch-item">
+          <span>UTF-8 Locale (${escapeHtml(loc.effective || "unknown")})</span>
+          <span class="${loc.utf8 ? "status-ok" : "status-warn"}">${loc.utf8 ? "✓ UTF-8" : "NON-UTF8"}</span>
+        </div>
+        <div class="patch-item">
+          <span>Nerd / Powerline Fonts${escapeHtml(samples)}</span>
+          <span class="${nf.detected ? "status-ok" : "status-warn"}">${nf.detected ? `✓ ${nf.count} FOUND` : "NOT DETECTED"}</span>
+        </div>
+        <div class="patch-item">
+          <span>System Swap Present</span>
+          <span class="status-ok">${state.greeter && state.greeter.has_swap ? "YES" : "NO (hide SWAP_MON)"}</span>
+        </div>
+      `;
+    }
+
+    function syncFromServerState(srvState, backups, greeterState) {
       if (srvState.active_theme_id) {
         state.activeThemeId = srvState.active_theme_id;
         state.selectedThemeId = srvState.active_theme_id;
@@ -1014,13 +1193,26 @@
       state.twoLine = Boolean(srvState.enable_command_on_new_line);
       state.verticalPadding = Boolean(srvState.enable_vertical_padding);
       state.maxPwdChar = Number(srvState.max_pwd_char || 35);
+      state.maxGitChar = Number(srvState.max_git_char || 0);
+      state.maxPyenvChar = Number(srvState.max_pyenv_char || 0);
+      state.maxKubeChar = Number(srvState.max_kube_char || 28);
+      state.promptPrefix = String(srvState.prompt_prefix || "");
+      state.fontEffect = String(srvState.font_effect || "bold");
+      state.enableTerminalTitle = srvState.enable_terminal_title !== false;
+      state.gitSkipUntracked = srvState.git_skip_untracked_on_slow_fs !== false;
+      state.gitTimeoutMs = Number(srvState.git_timeout_ms || 0);
+      state.gitAsyncCache = Boolean(srvState.git_async_cache);
+      state.minDurationMs = Number(srvState.min_duration_ms || 2000);
+      state.rootConfigExists = Boolean(srvState.root_config_exists);
       state.patches = srvState.patches || {};
+      if (greeterState) state.greeter = greeterState;
       if (Array.isArray(backups)) state.backups = backups;
 
       renderWorkbench();
       renderThemeGrid();
       renderSeparatorsTab();
       renderLayoutTab();
+      renderSyncTab();
     }
 
     async function applyChanges(payload) {
@@ -1060,8 +1252,9 @@
       state.themes = boot.themes || [];
       state.separators = boot.separators || { categories: [], palette: [] };
       state.validSegments = boot.valid_segments || ["USER", "HOST", "PWD", "GIT", "PYENV", "TF", "KUBE", "CLOCK"];
+      state.diagnostics = boot.diagnostics || {};
       renderBadges();
-      syncFromServerState(boot.state || {}, boot.backups || []);
+      syncFromServerState(boot.state || {}, boot.backups || [], boot.greeter || null);
     }
 
     // Event bindings
@@ -1140,13 +1333,112 @@
       document.getElementById("lbl-max-pwd").textContent = state.maxPwdChar;
     });
 
+    document.getElementById("rng-max-git").addEventListener("input", e => {
+      state.maxGitChar = Number(e.target.value);
+      document.getElementById("lbl-max-git").textContent = state.maxGitChar;
+    });
+
+    document.getElementById("rng-max-pyenv").addEventListener("input", e => {
+      state.maxPyenvChar = Number(e.target.value);
+      document.getElementById("lbl-max-pyenv").textContent = state.maxPyenvChar;
+    });
+
+    document.getElementById("rng-max-kube").addEventListener("input", e => {
+      state.maxKubeChar = Number(e.target.value);
+      document.getElementById("lbl-max-kube").textContent = state.maxKubeChar;
+    });
+
+    document.getElementById("inp-prefix").addEventListener("input", e => {
+      state.promptPrefix = e.target.value;
+      renderWorkbench();
+    });
+
+    document.getElementById("sel-font-effect").addEventListener("change", e => {
+      state.fontEffect = e.target.value;
+      renderWorkbench();
+    });
+
+    document.getElementById("chk-term-title").addEventListener("change", e => {
+      state.enableTerminalTitle = e.target.checked;
+    });
+
+    document.getElementById("chk-wsl-fast").addEventListener("change", e => {
+      state.gitSkipUntracked = e.target.checked;
+    });
+
+    document.getElementById("chk-async-git").addEventListener("change", e => {
+      state.gitAsyncCache = e.target.checked;
+    });
+
     document.getElementById("btn-save-layout").addEventListener("click", () => {
       applyChanges({
         format: state.formatSegments,
         enable_command_on_new_line: state.twoLine,
         enable_vertical_padding: state.verticalPadding,
-        max_pwd_char: state.maxPwdChar
+        max_pwd_char: state.maxPwdChar,
+        max_git_char: state.maxGitChar,
+        max_pyenv_char: state.maxPyenvChar,
+        max_kube_char: state.maxKubeChar,
+        prompt_prefix: state.promptPrefix,
+        font_effect: state.fontEffect,
+        enable_terminal_title: state.enableTerminalTitle,
+        git_skip_untracked_on_slow_fs: state.gitSkipUntracked,
+        git_timeout_ms: Number(document.getElementById("inp-git-timeout").value || 0),
+        git_async_cache: state.gitAsyncCache,
+        min_duration_ms: Number(document.getElementById("inp-min-duration").value || 2000)
       });
+    });
+
+    document.getElementById("btn-ascii-safe").addEventListener("click", async () => {
+      const resp = await fetch("/api/ascii-safe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ separator: ">" })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups);
+        showToast("ASCII-Safe separators & Git symbols applied!");
+      }
+    });
+
+    document.getElementById("btn-sync-root").addEventListener("click", async () => {
+      const resp = await fetch("/api/sync-root", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root_accent: "196" })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups);
+        showToast("Synced synth-shell-prompt.root.config!");
+      }
+    });
+
+    document.getElementById("btn-sync-greeter").addEventListener("click", async () => {
+      const resp = await fetch("/api/greeter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monitors: state.greeter.monitors })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups, data.greeter);
+        showToast("Synced synth-shell-greeter.config!");
+      }
+    });
+
+    document.getElementById("btn-greeter-hide-swap").addEventListener("click", async () => {
+      const resp = await fetch("/api/greeter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monitors: state.greeter.monitors, hide_swap_if_unavailable: true })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups, data.greeter);
+        showToast("Updated greeter monitors (swap auto-check applied)!");
+      }
     });
 
     document.getElementById("btn-run-patches").addEventListener("click", async () => {
@@ -1157,9 +1449,9 @@
       });
       const data = await resp.json();
       if (data.ok) {
-        syncFromServerState(data.state, data.backups);
+        syncFromServerState(data.state, data.backups, data.greeter);
         const count = (data.changes || []).length;
-        showToast(count ? `Applied ${count} runtime patch(es)` : "All 4 runtime patches already active!");
+        showToast(count ? `Applied ${count} runtime patch(es)` : "All v1.1 runtime patches already active!");
       }
     });
 

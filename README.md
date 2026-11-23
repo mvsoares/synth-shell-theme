@@ -23,11 +23,14 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
 - **Side-by-Side Terminal UI (`synth-shell-theme`)**: 2-column 256-color live terminal preview rendering both 3-segment and 6-segment DevOps prompts (`host · pwd · git · pyenv · tf · kube`), live search (`/term`), high-contrast white-text mode (`[f]`), and 1-key undo (`[u]`).
 - **Dual Powerline Separator Editor (`synth-shell-separator` or `synth-shell-theme sep`)**: Mix independent **internal** (`separator_char`) and **ending** (`separator_char_end`) glyphs across **48 curated presets** in 6 categories plus a **60+ Nerd Font Character Matrix**.
 - **Live Browser Web Studio (`synth-shell-theme web`)**: Local HTTP studio (`http://127.0.0.1:7778`) with a sticky live prompt workbench, category badge filtering, 1-click theme & dual-separator application, segment order toggles (`USER HOST PWD GIT PYENV TF KUBE CLOCK`), and backup history.
-- **4 Idempotent Runtime & Performance Patches (`synth-shell-theme init`)**:
-  1. **Zero-subshell Kubernetes context (`kube_fast`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, removes `yq` dependency, shortens GKE context names).
-  2. **Single-pass Git status (`git_single_pass`)**: Consolidates 3 `git status` invocations into a single `git status --porcelain -b` call (**4× faster prompt** in large repositories).
-  3. **Independent Ending Separator (`dual_separator`)**: Extends `printSegment()` and `combine_elements()` to honor `separator_char_end` right before typed input.
-  4. **Full 256-Color Parity (`color_256_parity`)**: Upgrades `getColorCode()` and `getBackgroundCode()` across `synth-shell-prompt.sh`, `alias.sh`, `better-ls.sh`, and `better-history.sh` so indices `0`–`255` and all 16 named colors render identically.
+- **4+ Idempotent Runtime, Speed & Safety Patches (`synth-shell-theme init`)**:
+  1. **Zero-fork segment renderer (`zero_fork_render`)**: Eliminates ~15–25 subshell forks per `Enter` via pure-Bash color/format variable lookups.
+  2. **Zero-subshell Kubernetes context (`kube_fast`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, removes `yq` dependency, shortens GKE context names, respects `max_kube_char`).
+  3. **Single-pass Git + WSL2/Monorepo engine (`git_single_pass` / `git_wsl_fast`)**: Consolidates 3 `git status` calls into one, auto-skips untracked scans on WSL2 `/mnt/*`, supports `--git-timeout`, optional `--async-git` background cache (`/dev/shm`), and `--max-git` branch truncation.
+  4. **Telemetry & Cloud segments (`v11_segments`)**: Zero-fork `STATUS` (non-zero exit code), `DURATION` (`PS0` + `$EPOCHREALTIME` timer), `AWS`, `GCP`, `DOCKER`, `NODE`, and `SSH`/`CONTAINER`, plus `prompt_prefix`, `font_effect` (`bold`/`regular`/`italic`/`dim`), and OSC-0 terminal tab titles.
+  5. **Accurate Virtualenv & Conda (`pyenv_enhanced`)**: Pure-Bash `$VIRTUAL_ENV_PROMPT`, `pyvenv.cfg` `prompt`, `$CONDA_DEFAULT_ENV`, parent-dir naming for `.venv`, and `--max-pyenv` truncation.
+  6. **Independent Ending Separator (`dual_separator`) & 256-Color Parity (`color_256_parity`)**: Supports `separator_char_end`, 0–255 & all 16 named colors, and `italic`/`regular` text styles.
+  7. **Unicode `PS1` Guard (`utf8_ps1_guard`), Non-Interactive Safety (`interactive_guard`) & Greeter Fixes**: Prevents `\uE0B0` turning into `usernameE0B0` under `LC_ALL=C`, protects `scp`/`sftp`/`rsync`, adds `--ascii-safe`, `--sync-root`, `--sync-greeter`, plus AMD `k10temp`/`Tctl` CPU temp & ZFS ARC RAM fixes for `synth-shell-greeter`.
 - **Safe Atomic Writes & Backups**: Preserves your custom layout, padding, and Git symbols when switching colors, with automatic timestamped backups in `~/.config/synth-shell/backups/` and portable JSON presets (`export` / `import`).
 
 ---
@@ -157,10 +160,18 @@ synth-shell-theme --dual slant zap          # Cyberpunk slant inside + lightning
 synth-shell-separator --palette             # Print 60+ Nerd Font glyph cheat-sheet
 synth-shell-separator                       # Launch dedicated interactive separator editor
 
-# Prompt layout options
-synth-shell-theme --format "HOST PWD GIT PYENV TF KUBE" --two-line
+# Prompt layout, truncation, prefix, text effect & telemetry segments
+synth-shell-theme --format "HOST PWD GIT PYENV TF KUBE STATUS DURATION AWS" --two-line
+synth-shell-theme --max-pwd 35 --max-git 22 --max-pyenv 18 --prefix auto --text-effect regular
 
-# Health check, backups & portable presets
+# WSL2 / monorepo speed & ASCII-safe mode (SSH servers without Nerd Fonts)
+synth-shell-theme --fast-git-wsl --git-timeout 400 --async-git
+synth-shell-theme --ascii-safe
+
+# Root prompt & synth-shell-greeter palette/monitor sync
+synth-shell-theme --sync-root --sync-greeter --hide-swap
+
+# Health check (paths, UTF-8 locale, Nerd Fonts, patches), backups & portable presets
 synth-shell-theme doctor
 synth-shell-theme --restore
 synth-shell-theme export my-prompt.json

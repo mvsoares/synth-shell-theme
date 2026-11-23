@@ -325,6 +325,260 @@ class SynthShellThemeTests(unittest.TestCase):
         self.assertEqual(rc_sep, 0)
         self.assertIn("Character Palette", buf_sep.getvalue())
 
+    def test_v11_full_patches_and_bash_runtime_behavior(self) -> None:
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH + """
+getEffectCode()
+{
+\tcase $1 in
+\tdim)
+\t\techo 2
+\t\t;;
+\t*)
+\t\techo 0
+\t\t;;
+\tesac
+}
+getPyenv()
+{
+\techo "${VIRTUAL_ENV:-}"
+}
+get_colors_for_element()
+{
+\tcase $1 in
+\t\t"USER") echo "${SSP_COLORS_USER[@]}" ;;
+\t\t"INPUT") echo "${SSP_COLORS_INPUT[@]}" ;;
+\tesac
+}
+prompt_command_hook()
+{
+\tPS1="$USER"
+}
+synth_shell_prompt()
+{
+\tSSP_ELEMENTS=($format "INPUT")
+\tSSP_COLORS_USER=(white blue bold)
+\tSSP_COLORS_HOST=(white 237 bold)
+\tSSP_COLORS_PWD=(black 255 bold)
+\tSSP_COLORS_GIT=(black 71 bold)
+\tSSP_COLORS_PYENV=(white 63 bold)
+\tSSP_COLORS_KUBE=(black 135 bold)
+\tSSP_COLORS_TF=(black 228 bold)
+\tSSP_COLORS_CLOCK=(white 240 bold)
+\tSSP_COLORS_INPUT=(white none bold)
+\tSSP_VERTICAL_PADDING=""
+\tSSP_NEW_LINE_LINK_TOP=""
+\tSSP_NEW_LINE_LINK_BOTTOM=""
+\tSSP_PROMPT_COMM_SEP=""
+\tSSP_BASH_SYMBOL=""
+\tSSP_MAX_PWD_CHAR=35
+\tSSP_PWD_TRUNC_SYMBOL="…"
+\tSSP_CLOCK_FORMAT="%H:%M"
+\tPROMPT_COMMAND=prompt_command_hook
+}
+"""
+        mock_greeter = """#!/usr/bin/env bash
+printInfoCPUTemp()
+{
+\techo "old temp"
+}
+printMonitorRAM()
+{
+\techo "old ram"
+}
+"""
+        prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
+        greeter_sh = self.cfg_dir / "synth-shell-greeter.sh"
+        prompt_sh.write_text(full_prompt, encoding="utf-8", newline="\n")
+        greeter_sh.write_text(mock_greeter, encoding="utf-8", newline="\n")
+
+        res1 = patches.apply_runtime_patches(self.cfg_dir)
+        st1 = res1["status"]
+        self.assertTrue(st1["all_applied"], msg=f"Status: {st1}")
+        for key in (
+            "kube_fast",
+            "git_single_pass",
+            "git_wsl_fast",
+            "zero_fork_render",
+            "v11_segments",
+            "pyenv_enhanced",
+            "utf8_ps1_guard",
+            "interactive_guard",
+            "greeter_amd_temp",
+            "greeter_zfs_arc",
+        ):
+            self.assertTrue(st1[key], msg=f"Expected {key} to be True")
+
+        # Strict idempotency check
+        res2 = patches.apply_runtime_patches(self.cfg_dir)
+        self.assertEqual(res2["changes"], [])
+        self.assertTrue(res2["status"]["all_applied"])
+
+        if shutil.which("bash"):
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                for pfile in (prompt_sh, greeter_sh):
+                    chk = subprocess.run(
+                        ["bash", "-n"],
+                        input=pfile.read_text(encoding="utf-8"),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(chk.returncode, 0, msg=f"{pfile.name}: {chk.stderr}")
+
+                # Non-interactive source must exit cleanly with zero stdout (`scp`/`sftp` safety)
+                ni = subprocess.run(
+                    ["bash", "-c", f'source "{prompt_sh}"'],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(ni.returncode, 0)
+                self.assertEqual(ni.stdout, "")
+
+                # Test UTF-8 PS1 escape guard under LC_ALL=C vs UTF-8, getPyenv, and v1.1 segments
+                stripped = "\n".join(
+                    ln for ln in prompt_sh.read_text(encoding="utf-8").splitlines()
+                    if "interactive_guard" not in ln
+                )
+                runner = self.cfg_dir / "test_helpers.sh"
+                runner.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+
+                # 1. Under LC_ALL=C, \uE0B0 must degrade cleanly to '>' (never literal \uE0B0)
+                c_env = dict(os.environ)
+                c_env["LC_ALL"] = "C"
+                c_env["LANG"] = "C"
+                c_res = subprocess.run(
+                    ["bash", "-c", f'source "{runner}"; _ssp_resolve_sep "\\uE0B0"; printf "%s" "$_SSP_SEP"'],
+                    env=c_env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(c_res.stdout, ">")
+
+                # 2. Pure-Bash getPyenv (`VIRTUAL_ENV_PROMPT`, `pyvenv.cfg`, truncation) + AWS/DOCKER/SSH/DURATION
+                ve_dir = self.cfg_dir / "my-proj" / ".venv"
+                ve_dir.mkdir(parents=True, exist_ok=True)
+                (ve_dir / "pyvenv.cfg").write_text("prompt = custom-venv-superlong\n", encoding="utf-8", newline="\n")
+                seg_cmd = (
+                    f'source "{runner}"; '
+                    f'VIRTUAL_ENV="{ve_dir}" SSP_MAX_PYENV_CHAR=10 getPyenv; echo ""; '
+                    'VIRTUAL_ENV_PROMPT="(api-prod)" getPyenv; echo ""; '
+                    'AWS_PROFILE=prod-admin getAws; echo ""; '
+                    'DOCKER_CONTEXT=remote-gpu getDocker; echo ""; '
+                    'SSH_CONNECTION="1 2 3 4" getSsh; echo ""; '
+                    '_SSP_CMD_START_MS=$(( ${EPOCHREALTIME/./} / 1000 - 4250 )); SSP_MIN_DURATION_MS=2000; '
+                    '_ssp_format_duration_var; echo "$_SSP_DUR"'
+                )
+                seg_res = subprocess.run(["bash", "-c", seg_cmd], capture_output=True, text=True, check=False)
+                out_lines = seg_res.stdout.splitlines()
+                self.assertEqual(out_lines[0], "custom-ve…")
+                self.assertEqual(out_lines[1], "api-prod")
+                self.assertEqual(out_lines[2], "☁ prod-admin")
+                self.assertEqual(out_lines[3], "🐳 remote-gpu")
+                self.assertEqual(out_lines[4], "⇄ ssh")
+                self.assertRegex(out_lines[5], r"^⏱ 4\.[23]s$")
+
+    def test_v11_layout_ascii_safe_root_greeter_and_web_endpoints(self) -> None:
+        # Apply Tokyo Night + v1.1 CLI options (truncation, prefix, effect, WSL fast-git, root & greeter sync)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main([
+                "--apply", "tokyo-night",
+                "--format", "HOST PWD GIT PYENV KUBE STATUS DURATION AWS",
+                "--max-git", "22",
+                "--max-pyenv", "16",
+                "--max-kube", "20",
+                "--prefix", "auto",
+                "--text-effect", "italic",
+                "--no-terminal-title",
+                "--git-timeout", "400",
+                "--async-git",
+                "--min-duration", "1500",
+                "--sync-root",
+                "--sync-greeter",
+                "--greeter-monitors", "OS KERNEL CPU MEMORY_MON HDDROOT_MON",
+            ])
+        self.assertEqual(rc, 0)
+
+        state = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertEqual(state["active_theme"], "Tokyo Night")
+        self.assertEqual(state["max_git_char"], 22)
+        self.assertEqual(state["max_pyenv_char"], 16)
+        self.assertEqual(state["max_kube_char"], 20)
+        self.assertEqual(state["prompt_prefix"], "auto")
+        self.assertEqual(state["font_effect"], "italic")
+        self.assertFalse(state["enable_terminal_title"])
+        self.assertEqual(state["git_timeout_ms"], 400)
+        self.assertTrue(state["git_async_cache"])
+        self.assertEqual(state["min_duration_ms"], 1500)
+        self.assertIn("STATUS", state["format_segments"])
+        self.assertIn("DURATION", state["format_segments"])
+        self.assertIn("AWS", state["format_segments"])
+
+        root_cfg = self.cfg_dir / "synth-shell-prompt.root.config"
+        greeter_cfg = self.cfg_dir / "synth-shell-greeter.config"
+        self.assertTrue(root_cfg.is_file())
+        self.assertTrue(greeter_cfg.is_file())
+        self.assertIn('background_user="196"', root_cfg.read_text(encoding="utf-8"))
+        g_state = core.read_greeter_state(self.cfg_dir)
+        self.assertEqual(g_state["monitors"], ["OS", "KERNEL", "CPU", "MEMORY_MON", "HDDROOT_MON"])
+
+        # Export v2 preset and re-import after switching to ASCII-safe mode
+        preset_v2 = self.cfg_dir / "v2-preset.json"
+        core.export_preset(preset_v2, self.cfg_dir)
+        core.apply_ascii_safe_mode(config_dir=self.cfg_dir)
+        ascii_state = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertEqual(ascii_state["internal_separator"]["glyph"], ">")
+        self.assertIn('git_symbol_dirty=" *"', (self.cfg_dir / "synth-shell-prompt.config").read_text(encoding="utf-8"))
+
+        core.import_preset(preset_v2, self.cfg_dir)
+        reimported = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertEqual(reimported["max_git_char"], 22)
+        self.assertEqual(reimported["prompt_prefix"], "auto")
+        self.assertTrue(reimported["git_async_cache"])
+
+        # Doctor JSON includes locale, nerd_fonts, and greeter diagnostics
+        buf_doc = io.StringIO()
+        with contextlib.redirect_stdout(buf_doc):
+            rc_doc = cli.main(["doctor", "--json"])
+        self.assertEqual(rc_doc, 0)
+        doc = json.loads(buf_doc.getvalue())
+        self.assertIn("locale", doc["system"])
+        self.assertIn("nerd_fonts", doc["system"])
+        self.assertIn("greeter", doc)
+
+        # Web Studio v1.1 HTTP endpoints
+        httpd = server.create_studio_server("127.0.0.1", 0, config_dir=self.cfg_dir)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_b:
+                boot = json.loads(r_b.read().decode("utf-8"))
+                self.assertEqual(len(boot["valid_segments"]), 15)
+                self.assertIn("diagnostics", boot)
+                self.assertIn("greeter", boot)
+
+            for ep, payload in (
+                ("/api/ascii-safe", {"separator": ">"}),
+                ("/api/sync-root", {"root_accent": "196"}),
+                ("/api/greeter", {"monitors": ["OS", "CPU", "MEMORY_MON"], "hide_swap_if_unavailable": True}),
+            ):
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}{ep}",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                    self.assertTrue(body["ok"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

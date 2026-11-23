@@ -1,12 +1,31 @@
-"""Cross-platform path discovery and terminal environment helpers for synth-shell-theme."""
+"""Cross-platform path discovery, font/locale diagnostics, and terminal helpers for synth-shell-theme."""
 
 from __future__ import annotations
 
+import locale
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+_NERD_FONT_TOKENS = (
+    "nerd",
+    "powerline",
+    "meslolgs",
+    "caskaydia",
+    "firacode",
+    "jetbrainsmono",
+    "hack nerd",
+    "blexmono",
+    "iosevka nf",
+    "symbols nerd",
+    " nf",
+    " nfm",
+    " nfp",
+    " pl",
+)
 
 
 def detect_os() -> str:
@@ -57,10 +76,36 @@ def get_config_path(config_dir: Path | None = None) -> Path:
     return base / "synth-shell-prompt.config"
 
 
+def get_root_config_path(config_dir: Path | None = None) -> Path:
+    """Return the path to `synth-shell-prompt.root.config`."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    return base / "synth-shell-prompt.root.config"
+
+
 def get_prompt_script_path(config_dir: Path | None = None) -> Path:
     """Return the path to `synth-shell-prompt.sh`."""
     base = config_dir if config_dir is not None else get_config_dir()
     return base / "synth-shell-prompt.sh"
+
+
+def get_greeter_config_path(config_dir: Path | None = None) -> Path:
+    """Return the path to `synth-shell-greeter.config` (or legacy `status.config` if present)."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    primary = base / "synth-shell-greeter.config"
+    legacy = base / "status.config"
+    if primary.is_file() or not legacy.is_file():
+        return primary
+    return legacy
+
+
+def get_greeter_script_path(config_dir: Path | None = None) -> Path:
+    """Return the path to `synth-shell-greeter.sh` (or legacy `status.sh` if present)."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    primary = base / "synth-shell-greeter.sh"
+    legacy = base / "status.sh"
+    if primary.is_file() or not legacy.is_file():
+        return primary
+    return legacy
 
 
 def get_backup_dir(config_dir: Path | None = None) -> Path:
@@ -84,11 +129,117 @@ def get_assets_dir() -> Path:
     return get_package_dir() / "assets"
 
 
+def detect_utf8_locale() -> dict[str, object]:
+    """Inspect active shell locale variables and encoding to determine UTF-8 readiness."""
+    lc_all = os.environ.get("LC_ALL", "")
+    lc_ctype = os.environ.get("LC_CTYPE", "")
+    lang = os.environ.get("LANG", "")
+    preferred = locale.getpreferredencoding(False) or ""
+
+    effective = lc_all or lc_ctype or lang
+    norm_eff = effective.lower().replace("-", "")
+    norm_pref = preferred.lower().replace("-", "")
+
+    if effective:
+        is_utf8 = "utf8" in norm_eff
+    else:
+        is_utf8 = "utf8" in norm_pref
+
+    return {
+        "utf8": is_utf8,
+        "encoding": preferred,
+        "effective": effective or preferred or "unknown",
+        "lang": lang,
+        "lc_all": lc_all,
+        "lc_ctype": lc_ctype,
+    }
+
+
+def _matches_nerd_font(name: str) -> bool:
+    low = name.lower()
+    return any(tok in low for tok in _NERD_FONT_TOKENS)
+
+
+def detect_nerd_fonts() -> dict[str, object]:
+    """Scan local font registry/directories for installed Nerd Font or Powerline fonts."""
+    matches: list[str] = []
+    seen: set[str] = set()
+    os_name = detect_os()
+
+    def _add(font_name: str) -> None:
+        clean = font_name.strip()
+        if not clean:
+            return
+        key = clean.lower()
+        if key not in seen and _matches_nerd_font(clean):
+            seen.add(key)
+            matches.append(clean)
+
+    fc_list = shutil.which("fc-list")
+    if fc_list:
+        try:
+            proc = subprocess.run(
+                [fc_list, ":", "family"],
+                capture_output=True,
+                text=True,
+                timeout=2.5,
+                check=False,
+            )
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    for fam in line.split(","):
+                        _add(fam)
+        except Exception:
+            pass
+
+    if not matches:
+        font_dirs: list[Path] = []
+        if os_name == "macos":
+            font_dirs = [Path.home() / "Library" / "Fonts", Path("/Library/Fonts")]
+        elif os_name == "windows":
+            local_app = os.environ.get("LOCALAPPDATA", "")
+            if local_app:
+                font_dirs.append(Path(local_app) / "Microsoft" / "Windows" / "Fonts")
+            font_dirs.append(Path("C:/Windows/Fonts"))
+        else:
+            font_dirs = [
+                Path.home() / ".local" / "share" / "fonts",
+                Path.home() / ".fonts",
+                Path("/usr/local/share/fonts"),
+                Path("/usr/share/fonts"),
+            ]
+
+        for fdir in font_dirs:
+            if not fdir.is_dir():
+                continue
+            try:
+                for root, _dirs, files in os.walk(fdir):
+                    for fname in files:
+                        if fname.lower().endswith((".ttf", ".otf", ".ttc")):
+                            _add(Path(fname).stem)
+                            if len(matches) >= 30:
+                                break
+                    if len(matches) >= 30:
+                        break
+            except OSError:
+                continue
+
+    matches.sort()
+    return {
+        "detected": bool(matches),
+        "count": len(matches),
+        "samples": matches[:6],
+    }
+
+
 def system_summary(config_dir: Path | None = None) -> dict[str, object]:
     """Return environment and installation diagnostics for `synth-shell-theme doctor`."""
     base = config_dir if config_dir is not None else get_config_dir()
     cfg = get_config_path(base)
+    root_cfg = get_root_config_path(base)
     prompt_sh = get_prompt_script_path(base)
+    greeter_cfg = get_greeter_config_path(base)
+    greeter_sh = get_greeter_script_path(base)
     bdir = get_backup_dir(base)
     backups = sorted(bdir.glob("synth-shell-prompt.config.*.bak")) if bdir.is_dir() else []
 
@@ -99,12 +250,20 @@ def system_summary(config_dir: Path | None = None) -> dict[str, object]:
         "config_dir": str(base),
         "config_path": str(cfg),
         "config_exists": cfg.is_file(),
+        "root_config_path": str(root_cfg),
+        "root_config_exists": root_cfg.is_file(),
         "prompt_script_path": str(prompt_sh),
         "prompt_script_exists": prompt_sh.is_file(),
+        "greeter_config_path": str(greeter_cfg),
+        "greeter_config_exists": greeter_cfg.is_file(),
+        "greeter_script_path": str(greeter_sh),
+        "greeter_script_exists": greeter_sh.is_file(),
         "backup_dir": str(bdir),
         "backup_count": len(backups),
         "bash_found": shutil.which("bash") is not None,
         "git_found": shutil.which("git") is not None,
         "themes_dir": str(get_themes_dir()),
         "bundled_themes": len(list(get_themes_dir().glob("*.conf"))),
+        "locale": detect_utf8_locale(),
+        "nerd_fonts": detect_nerd_fonts(),
     }

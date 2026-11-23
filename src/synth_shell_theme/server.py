@@ -1,4 +1,4 @@
-"""Local HTTP Web Studio server for synth-shell-theme (zero external dependencies)."""
+"""Local HTTP Web Studio server for synth-shell-theme (zero external dependencies, v1.1.0)."""
 
 from __future__ import annotations
 
@@ -12,17 +12,22 @@ from urllib.parse import urlparse
 
 from synth_shell_theme import __version__
 from synth_shell_theme.core import (
+    VALID_FONT_EFFECTS,
     VALID_FORMAT_TOKENS,
+    apply_ascii_safe_mode,
     apply_layout_options,
     apply_separators,
     apply_theme,
     backup_config,
     list_backups,
     read_current_state,
+    read_greeter_state,
     restore_backup,
+    sync_greeter_theme,
+    sync_root_config,
 )
 from synth_shell_theme.patches import apply_runtime_patches
-from synth_shell_theme.paths import get_assets_dir, get_config_dir
+from synth_shell_theme.paths import detect_nerd_fonts, detect_utf8_locale, get_assets_dir, get_config_dir
 from synth_shell_theme.separators import resolve_separator_input, serialize_separators_for_web
 from synth_shell_theme.themes import BOLD, DIM, RESET, find_theme, load_themes, serialize_theme_for_web
 
@@ -37,7 +42,13 @@ def build_bootstrap_payload(config_dir: Path | None = None) -> dict[str, object]
         "themes": serialized_themes,
         "separators": serialize_separators_for_web(),
         "valid_segments": list(VALID_FORMAT_TOKENS),
+        "valid_font_effects": list(VALID_FONT_EFFECTS),
         "state": read_current_state(themes, base),
+        "greeter": read_greeter_state(base),
+        "diagnostics": {
+            "locale": detect_utf8_locale(),
+            "nerd_fonts": detect_nerd_fonts(),
+        },
         "backups": list_backups(base),
     }
 
@@ -46,17 +57,19 @@ def handle_apply_payload(
     payload: dict[str, object],
     config_dir: Path | None = None,
 ) -> dict[str, object]:
-    """Apply theme, dual separators, and/or layout options atomically from a JSON payload."""
+    """Apply theme, dual separators, layout, truncation, speed, and sync options atomically."""
     base = config_dir if config_dir is not None else get_config_dir()
     themes = load_themes()
     bak = backup_config(base)
     applied: list[str] = []
+    chosen_theme: dict[str, object] | None = None
 
     if "theme" in payload and payload["theme"] not in (None, ""):
         query = payload["theme"]
         theme, _ = find_theme(query, themes)  # type: ignore[arg-type]
         if not theme:
             raise ValueError(f"Theme not found: {query}")
+        chosen_theme = theme
         force_white = bool(payload.get("force_white", False))
         keep_input = bool(payload.get("keep_input", False))
         res_t = apply_theme(
@@ -68,30 +81,46 @@ def handle_apply_payload(
         )
         applied.append(f"Theme: {res_t['theme']}")
 
-    int_raw = payload.get("internal_separator")
-    end_raw = payload.get("end_separator")
-    int_tuple: tuple[str, str] | None = None
-    end_tuple: tuple[str, str] | None = None
-    if isinstance(int_raw, str) and int_raw.strip():
-        g, c, _ = resolve_separator_input(int_raw.strip())
-        int_tuple = (g, c)
-    if isinstance(end_raw, str) and end_raw.strip():
-        g, c, _ = resolve_separator_input(end_raw.strip())
-        end_tuple = (g, c)
-    if int_tuple is not None or end_tuple is not None:
-        apply_separators(
-            internal=int_tuple,
-            end=end_tuple,
-            create_backup=False,
-            config_dir=base,
-        )
-        applied.append("Separators updated")
+    if payload.get("ascii_safe"):
+        apply_ascii_safe_mode(create_backup=False, config_dir=base)
+        applied.append("ASCII-Safe Mode")
+    else:
+        int_raw = payload.get("internal_separator")
+        end_raw = payload.get("end_separator")
+        int_tuple: tuple[str, str] | None = None
+        end_tuple: tuple[str, str] | None = None
+        if isinstance(int_raw, str) and int_raw.strip():
+            g, c, _ = resolve_separator_input(int_raw.strip())
+            int_tuple = (g, c)
+        if isinstance(end_raw, str) and end_raw.strip():
+            g, c, _ = resolve_separator_input(end_raw.strip())
+            end_tuple = (g, c)
+        if int_tuple is not None or end_tuple is not None:
+            apply_separators(
+                internal=int_tuple,
+                end=end_tuple,
+                create_backup=False,
+                config_dir=base,
+            )
+            applied.append("Separators updated")
 
-    has_layout = any(
-        k in payload
-        for k in ("format", "enable_command_on_new_line", "enable_vertical_padding", "max_pwd_char")
+    layout_keys = (
+        "format",
+        "enable_command_on_new_line",
+        "enable_vertical_padding",
+        "max_pwd_char",
+        "max_git_char",
+        "max_pyenv_char",
+        "max_kube_char",
+        "prompt_prefix",
+        "font_effect",
+        "enable_terminal_title",
+        "git_skip_untracked_on_slow_fs",
+        "git_timeout_ms",
+        "git_async_cache",
+        "min_duration_ms",
     )
-    if has_layout:
+    if any(k in payload for k in layout_keys):
         fmt_raw = payload.get("format")
         if isinstance(fmt_raw, list):
             fmt_str: str | None = " ".join(str(x) for x in fmt_raw)
@@ -100,33 +129,42 @@ def handle_apply_payload(
         else:
             fmt_str = None
 
-        new_line = (
-            bool(payload["enable_command_on_new_line"])
-            if "enable_command_on_new_line" in payload
-            else None
-        )
-        v_pad = (
-            bool(payload["enable_vertical_padding"])
-            if "enable_vertical_padding" in payload
-            else None
-        )
-        max_pwd = int(payload["max_pwd_char"]) if "max_pwd_char" in payload else None  # type: ignore[arg-type]
-
         apply_layout_options(
             format_str=fmt_str,
-            new_line=new_line,
-            vertical_padding=v_pad,
-            max_pwd_char=max_pwd,
+            new_line=bool(payload["enable_command_on_new_line"]) if "enable_command_on_new_line" in payload else None,
+            vertical_padding=bool(payload["enable_vertical_padding"]) if "enable_vertical_padding" in payload else None,
+            max_pwd_char=int(payload["max_pwd_char"]) if "max_pwd_char" in payload else None,  # type: ignore[arg-type]
+            max_git_char=int(payload["max_git_char"]) if "max_git_char" in payload else None,  # type: ignore[arg-type]
+            max_pyenv_char=int(payload["max_pyenv_char"]) if "max_pyenv_char" in payload else None,  # type: ignore[arg-type]
+            max_kube_char=int(payload["max_kube_char"]) if "max_kube_char" in payload else None,  # type: ignore[arg-type]
+            prompt_prefix=str(payload["prompt_prefix"]) if "prompt_prefix" in payload else None,
+            font_effect=str(payload["font_effect"]) if "font_effect" in payload else None,
+            enable_terminal_title=bool(payload["enable_terminal_title"]) if "enable_terminal_title" in payload else None,
+            git_skip_untracked_on_slow_fs=(
+                bool(payload["git_skip_untracked_on_slow_fs"]) if "git_skip_untracked_on_slow_fs" in payload else None
+            ),
+            git_timeout_ms=int(payload["git_timeout_ms"]) if "git_timeout_ms" in payload else None,  # type: ignore[arg-type]
+            git_async_cache=bool(payload["git_async_cache"]) if "git_async_cache" in payload else None,
+            min_duration_ms=int(payload["min_duration_ms"]) if "min_duration_ms" in payload else None,  # type: ignore[arg-type]
             create_backup=False,
             config_dir=base,
         )
-        applied.append("Layout options updated")
+        applied.append("Layout & performance options updated")
+
+    if payload.get("sync_root"):
+        sync_root_config(theme=chosen_theme, config_dir=base)
+        applied.append("Root config synced")
+
+    if payload.get("sync_greeter"):
+        sync_greeter_theme(theme=chosen_theme, config_dir=base)
+        applied.append("Greeter palette synced")
 
     return {
         "ok": True,
         "applied": applied,
         "backup": str(bak) if bak else None,
         "state": read_current_state(themes, base),
+        "greeter": read_greeter_state(base),
         "backups": list_backups(base),
     }
 
@@ -141,7 +179,7 @@ def create_studio_server(
 
     class StudioHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
-            return  # Keep terminal quiet while browsing
+            return
 
         def _send_json(self, data: dict[str, object], status: int = HTTPStatus.OK) -> None:
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -204,6 +242,53 @@ def create_studio_server(
                             "ok": True,
                             "changes": patch_res["changes"],
                             "state": read_current_state(themes, config_dir),
+                            "greeter": read_greeter_state(config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/ascii-safe":
+                    sep = str(body.get("separator", ">"))
+                    res_a = apply_ascii_safe_mode(separator=sep, config_dir=config_dir)
+                    themes = load_themes()
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_a,
+                            "state": read_current_state(themes, config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/sync-root":
+                    accent = str(body.get("root_accent", "196"))
+                    res_r = sync_root_config(root_accent=accent, config_dir=config_dir)
+                    themes = load_themes()
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_r,
+                            "state": read_current_state(themes, config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/greeter":
+                    mons_raw = body.get("monitors")
+                    mons = [str(x) for x in mons_raw] if isinstance(mons_raw, list) else None
+                    hide_swap = bool(body.get("hide_swap_if_unavailable", False))
+                    res_g = sync_greeter_theme(
+                        monitors=mons,
+                        hide_swap_if_unavailable=hide_swap,
+                        config_dir=config_dir,
+                    )
+                    themes = load_themes()
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_g,
+                            "state": read_current_state(themes, config_dir),
+                            "greeter": read_greeter_state(config_dir),
                             "backups": list_backups(config_dir),
                         }
                     )

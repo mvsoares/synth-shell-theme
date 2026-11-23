@@ -66,8 +66,34 @@ SEGMENT_KEYS: tuple[str, ...] = (
     "tf",
     "kube",
     "clock",
+    "status",
+    "duration",
+    "aws",
+    "gcp",
+    "docker",
+    "node",
+    "ssh",
     "input",
 )
+
+DEFAULT_SEGMENT_COLORS: dict[str, tuple[str, str]] = {
+    "user": ("white", "blue"),
+    "host": ("white", "237"),
+    "pwd": ("black", "255"),
+    "git": ("black", "71"),
+    "pyenv": ("white", "63"),
+    "tf": ("black", "228"),
+    "kube": ("black", "135"),
+    "clock": ("white", "240"),
+    "status": ("white", "196"),
+    "duration": ("black", "220"),
+    "aws": ("black", "208"),
+    "gcp": ("white", "33"),
+    "docker": ("white", "39"),
+    "node": ("black", "76"),
+    "ssh": ("white", "125"),
+    "input": ("white", "none"),
+}
 
 
 def color_index(token: str | int | None) -> int | None:
@@ -396,21 +422,8 @@ def serialize_theme_for_web(theme: dict[str, object], index: int) -> dict[str, o
     segments_css: dict[str, dict[str, str | None]] = {}
     raw_colors: dict[str, str] = {}
 
-    # Defaults if a `.conf` omits optional segments like `user` or `clock`
-    defaults = {
-        "user": ("white", "blue"),
-        "host": ("white", "237"),
-        "pwd": ("black", "255"),
-        "git": ("black", "71"),
-        "pyenv": ("white", "63"),
-        "tf": ("black", "228"),
-        "kube": ("black", "135"),
-        "clock": ("white", "240"),
-        "input": ("white", "none"),
-    }
-
     for seg in SEGMENT_KEYS:
-        def_fg, def_bg = defaults[seg]
+        def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
         fg_tok = str(theme.get(f"font_color_{seg}", def_fg))
         bg_tok = str(theme.get(f"background_{seg}", def_bg))
         raw_colors[f"font_color_{seg}"] = fg_tok

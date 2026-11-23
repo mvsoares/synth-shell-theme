@@ -1,4 +1,4 @@
-"""Command-line interface for `synth-shell-theme` and `synth-shell-separator`."""
+"""Command-line interface for `synth-shell-theme` and `synth-shell-separator` (v1.1.0)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from pathlib import Path
 
 from synth_shell_theme import __version__
 from synth_shell_theme.core import (
+    VALID_FONT_EFFECTS,
+    apply_ascii_safe_mode,
     apply_layout_options,
     apply_separators,
     apply_theme,
@@ -20,7 +22,10 @@ from synth_shell_theme.core import (
     import_preset,
     list_backups,
     read_current_state,
+    read_greeter_state,
     restore_backup,
+    sync_greeter_theme,
+    sync_root_config,
 )
 from synth_shell_theme.patches import (
     apply_runtime_patches,
@@ -54,6 +59,7 @@ def _cmd_doctor(as_json: bool = False) -> int:
     summary = system_summary()
     patches = inspect_patches()
     state = read_current_state()
+    greeter = read_greeter_state()
     report = {
         "version": __version__,
         "system": summary,
@@ -62,6 +68,7 @@ def _cmd_doctor(as_json: bool = False) -> int:
         "active_theme_id": state["active_theme_id"],
         "internal_separator": state["internal_separator"],
         "end_separator": state["end_separator"],
+        "greeter": greeter,
     }
     if as_json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -69,14 +76,22 @@ def _cmd_doctor(as_json: bool = False) -> int:
 
     ok_tag = "\033[32;1mOK\033[0m"
     warn_tag = "\033[33;1mMISSING\033[0m"
+    opt_tag = "\033[36;1mOPTIONAL\033[0m"
+
+    loc = summary.get("locale", {})
+    nf = summary.get("nerd_fonts", {})
+    loc_ok = bool(isinstance(loc, dict) and loc.get("utf8"))
+    nf_ok = bool(isinstance(nf, dict) and nf.get("detected"))
 
     print()
     print(f"  {BOLD}Synth-Shell Theme Doctor{RESET} (v{__version__})")
-    print(f"  {DIM}{'─' * 58}{RESET}")
+    print(f"  {DIM}{'─' * 62}{RESET}")
     print(f"  OS / Python:      {summary['os']} ({summary['python']})")
     print(f"  Bundled themes:   {summary['bundled_themes']} themes + {len(ALL_PRESETS)} separator presets")
     print(f"  Config file:      {summary['config_path']} [{ok_tag if summary['config_exists'] else warn_tag}]")
+    print(f"  Root config:      {summary['root_config_path']} [{ok_tag if summary['root_config_exists'] else opt_tag}]")
     print(f"  Prompt script:    {summary['prompt_script_path']} [{ok_tag if summary['prompt_script_exists'] else warn_tag}]")
+    print(f"  Greeter config:   {summary['greeter_config_path']} [{ok_tag if summary['greeter_config_exists'] else opt_tag}]")
     print(f"  Backups saved:    {summary['backup_count']} ({summary['backup_dir']})")
     print(f"  Active theme:     {state['active_theme'] or 'None detected'}")
     int_sep = state["internal_separator"]
@@ -85,17 +100,40 @@ def _cmd_doctor(as_json: bool = False) -> int:
         f"  Separators:       internal={int_sep['glyph']} ({int_sep['code']})  "  # type: ignore[index]
         f"end={end_sep['glyph']} ({end_sep['code']})"  # type: ignore[index]
     )
+    print(
+        f"  UTF-8 Locale:     {loc.get('effective', 'unknown') if isinstance(loc, dict) else 'unknown'} "
+        f"[{ok_tag if loc_ok else warn_tag}]"
+    )
+    if nf_ok and isinstance(nf, dict):
+        samples = ", ".join(str(x) for x in list(nf.get("samples", []))[:3])  # type: ignore[arg-type]
+        print(f"  Nerd/PL Fonts:    {nf.get('count', 0)} found ({samples}) [{ok_tag}]")
+    else:
+        print(f"  Nerd/PL Fonts:    none detected [{warn_tag}] (tip: run `synth-shell-theme --ascii-safe`)")
+
     print()
     print(f"  {BOLD}Runtime Patches & Optimizations:{RESET}")
     patch_labels = [
-        ("kube_fast", "Zero-subshell Kubernetes context reader (no yq needed)"),
+        ("kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"),
         ("git_single_pass", "Single-pass `git status --porcelain -b` (4x speedup)"),
+        ("git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"),
+        ("zero_fork_render", "Zero-fork pure-Bash segment renderer (eliminates ~20 subshells)"),
         ("dual_separator", "Independent ending separator (`separator_char_end`)"),
-        ("color_256_parity", "Full 0-255 & 16-named-color parity across scripts"),
+        ("color_256_parity", "Full 0-255 & 16-named-color parity + italic/regular effects"),
+        ("v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH, prefix, title)"),
+        ("pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"),
+        ("utf8_ps1_guard", "UTF-8 PS1 escape guard (fixes \\uE0B0 username bug under LC_ALL=C)"),
+        ("interactive_guard", "Non-interactive shell safety guard (`scp`/`sftp`/`rsync` safe)"),
     ]
     for key, desc in patch_labels:
         badge = ok_tag if patches.get(key) else warn_tag
         print(f"    [{badge}] {desc}")
+    if patches.get("greeter_script_found"):
+        for key, desc in (
+            ("greeter_amd_temp", "Greeter AMD k10temp/Tctl CPU sensor + LC_ALL=C fix"),
+            ("greeter_zfs_arc", "Greeter ZFS ARC reclaimable memory accounting fix"),
+        ):
+            badge = ok_tag if patches.get(key) else warn_tag
+            print(f"    [{badge}] {desc}")
     if not patches.get("all_applied") and summary["prompt_script_exists"]:
         print()
         print(f"  Tip: Run {BOLD}synth-shell-theme init{RESET} to apply missing runtime optimizations.")
@@ -103,7 +141,14 @@ def _cmd_doctor(as_json: bool = False) -> int:
     return 0
 
 
-def _cmd_init(install_missing: bool = False, tune_defaults: bool = True, theme_choice: str | None = None) -> int:
+def _cmd_init(
+    install_missing: bool = False,
+    tune_defaults: bool = True,
+    theme_choice: str | None = None,
+    sync_root: bool = False,
+    sync_greeter: bool = False,
+    ascii_safe: bool = False,
+) -> int:
     prompt_sh = get_prompt_script_path()
     if not prompt_sh.is_file() and install_missing:
         print("  Installing upstream synth-shell into ~/.config/synth-shell ...")
@@ -114,9 +159,10 @@ def _cmd_init(install_missing: bool = False, tune_defaults: bool = True, theme_c
             return 1
 
     res = apply_runtime_patches(tune_defaults=tune_defaults)
-    changes = res["changes"]
+    changes = list(res["changes"])  # type: ignore[arg-type]
     status = res["status"]
 
+    selected_theme: dict[str, object] | None = None
     if theme_choice:
         themes = load_themes()
         found, _ = find_theme(theme_choice, themes)
@@ -124,11 +170,25 @@ def _cmd_init(install_missing: bool = False, tune_defaults: bool = True, theme_c
             print(f"Error: Theme '{theme_choice}' not found.", file=sys.stderr)
             return 1
         apply_theme(found)
+        selected_theme = found
+        changes.append(f"theme:{found['name']}")
+
+    if ascii_safe:
+        apply_ascii_safe_mode()
+        changes.append("ascii_safe")
+
+    if sync_root:
+        sync_root_config(theme=selected_theme)
+        changes.append("sync_root")
+
+    if sync_greeter:
+        sync_greeter_theme(theme=selected_theme, hide_swap_if_unavailable=True)
+        changes.append("sync_greeter")
 
     print()
-    print(f"  {BOLD}Synth-Shell Runtime Initialization{RESET}")
+    print(f"  {BOLD}Synth-Shell Runtime Initialization (v{__version__}){RESET}")
     if changes:
-        for item in changes:  # type: ignore[union-attr]
+        for item in changes:
             print(f"    \033[32;1m✓\033[0m Applied: {item}")
     else:
         print("    \033[32;1m✓\033[0m All runtime patches and defaults already up to date.")
@@ -243,7 +303,6 @@ def main(argv: list[str] | None = None) -> int:
     setup_console()
     raw_args = list(sys.argv[1:] if argv is None else argv)
 
-    # Subcommand routing (`web`/`studio`, `sep`/`separators`, `init`, `doctor`, `export`, `import`, `tui`)
     if raw_args:
         sub = raw_args[0].lower()
         rest = raw_args[1:]
@@ -268,18 +327,28 @@ def main(argv: list[str] | None = None) -> int:
         if sub == "init":
             init_parser = argparse.ArgumentParser(
                 prog="synth-shell-theme init",
-                description="Apply idempotent runtime & performance patches to synth-shell.",
+                description="Apply idempotent runtime, speed, segment & safety patches to synth-shell.",
             )
             init_parser.add_argument("--install", action="store_true", help="Clone & install upstream synth-shell if missing")
             init_parser.add_argument("--no-tune", action="store_true", help="Do not update default max_pwd_char / 2-line config options")
             init_parser.add_argument("-a", "--apply", metavar="THEME", help="Also apply a theme by number or slug")
+            init_parser.add_argument("--ascii-safe", action="store_true", help="Switch separators and Git symbols to ASCII-safe mode")
+            init_parser.add_argument("--sync-root", action="store_true", help="Also generate/sync synth-shell-prompt.root.config")
+            init_parser.add_argument("--sync-greeter", action="store_true", help="Also sync active palette to synth-shell-greeter.config")
             i_args = init_parser.parse_args(rest)
-            return _cmd_init(install_missing=i_args.install, tune_defaults=not i_args.no_tune, theme_choice=i_args.apply)
+            return _cmd_init(
+                install_missing=i_args.install,
+                tune_defaults=not i_args.no_tune,
+                theme_choice=i_args.apply,
+                sync_root=i_args.sync_root,
+                sync_greeter=i_args.sync_greeter,
+                ascii_safe=i_args.ascii_safe,
+            )
 
         if sub == "doctor":
             doc_parser = argparse.ArgumentParser(
                 prog="synth-shell-theme doctor",
-                description="Inspect synth-shell paths, active theme, backups, and runtime patches.",
+                description="Inspect synth-shell paths, locale, Nerd Fonts, backups, and runtime patches.",
             )
             doc_parser.add_argument("--json", action="store_true", help="Output diagnostics as JSON")
             d_args = doc_parser.parse_args(rest)
@@ -314,15 +383,15 @@ def main(argv: list[str] | None = None) -> int:
         prog="synth-shell-theme",
         description=(
             "Interactive 256-color Prompt Theme Picker (64 themes), Dual Powerline Separator Editor, "
-            "and Live Web Studio for synth-shell."
+            "Runtime Speed & Telemetry Optimizer, and Live Web Studio for synth-shell."
         ),
         epilog=(
             "Subcommands:\n"
             "  synth-shell-theme                Launch interactive 2-column TUI\n"
             "  synth-shell-theme web            Launch live browser-based Web Studio (port 7778)\n"
             "  synth-shell-theme sep            Launch interactive Dual Separator & 60+ Glyph Editor\n"
-            "  synth-shell-theme init           Apply 4 runtime & speed patches to synth-shell\n"
-            "  synth-shell-theme doctor         Check config, backups, and runtime patch health\n"
+            "  synth-shell-theme init           Apply all v1.1 runtime, speed, segment & safety patches\n"
+            "  synth-shell-theme doctor         Check config, locale, Nerd Fonts, backups & patch health\n"
             "  synth-shell-theme export FILE    Export current setup as a portable JSON preset\n"
             "  synth-shell-theme import FILE    Import and apply a JSON preset"
         ),
@@ -340,9 +409,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-d", "--dual", nargs=2, metavar=("INTERNAL", "ENDING"), help="Apply independent internal and ending separators")
     parser.add_argument("--internal", metavar="SEP", help="Set internal segment separator only")
     parser.add_argument("--end", metavar="SEP", help="Set final ending separator only")
-    parser.add_argument("--format", metavar="SEGMENTS", help='Set prompt segment order (e.g. "HOST PWD GIT PYENV TF KUBE")')
+    parser.add_argument("--format", metavar="SEGMENTS", help='Set prompt segment order (e.g. "HOST PWD GIT PYENV TF KUBE STATUS DURATION")')
     parser.add_argument("--two-line", dest="two_line", action="store_true", default=None, help="Enable 2-line command prompt")
     parser.add_argument("--single-line", dest="two_line", action="store_false", help="Enable compact 1-line command prompt")
+    parser.add_argument("--max-pwd", type=int, default=None, metavar="N", help="Max PWD display length (10-120)")
+    parser.add_argument("--max-git", type=int, default=None, metavar="N", help="Max Git branch length (0=unlimited, or 4-80)")
+    parser.add_argument("--max-pyenv", type=int, default=None, metavar="N", help="Max Python/Conda env name length (0=unlimited, or 4-60)")
+    parser.add_argument("--max-kube", type=int, default=None, metavar="N", help="Max Kubernetes context length (0=unlimited, or 4-60)")
+    parser.add_argument("--prefix", default=None, metavar="TEXT", help='Leading prompt prefix icon/string (use "auto" for OS icon, "" to clear)')
+    parser.add_argument("--text-effect", choices=VALID_FONT_EFFECTS, default=None, help="Global segment text effect (bold, regular, italic, dim, none)")
+    parser.add_argument("--terminal-title", dest="terminal_title", action="store_true", default=None, help="Enable OSC-0 terminal tab/window title updates")
+    parser.add_argument("--no-terminal-title", dest="terminal_title", action="store_false", help="Disable OSC-0 terminal title updates")
+    parser.add_argument("--fast-git-wsl", dest="fast_git_wsl", action="store_true", default=None, help="Skip untracked files on WSL /mnt/* drives")
+    parser.add_argument("--no-fast-git-wsl", dest="fast_git_wsl", action="store_false", help="Scan untracked files even on WSL /mnt/* drives")
+    parser.add_argument("--git-timeout", type=int, default=None, metavar="MS", help="Git status timeout in ms (0=disabled, e.g. 500)")
+    parser.add_argument("--async-git", dest="async_git", action="store_true", default=None, help="Enable asynchronous background Git status cache")
+    parser.add_argument("--no-async-git", dest="async_git", action="store_false", help="Disable asynchronous Git status cache")
+    parser.add_argument("--min-duration", type=int, default=None, metavar="MS", help="Minimum command runtime in ms to display DURATION segment (default 2000)")
+    parser.add_argument("--ascii-safe", action="store_true", help="Use ASCII-safe separators & Git symbols (for SSH hosts without Nerd Fonts)")
+    parser.add_argument("--sync-root", action="store_true", help="Generate/sync synth-shell-prompt.root.config from active theme")
+    parser.add_argument("--sync-greeter", action="store_true", help="Sync active theme palette to synth-shell-greeter.config")
+    parser.add_argument("--greeter-monitors", default=None, metavar="LIST", help='Set greeter monitors (e.g. "OS KERNEL CPU MEMORY_MON HDDROOT_MON")')
+    parser.add_argument("--hide-swap", action="store_true", help="Hide SWAP_MON in greeter config when host has no swap")
     parser.add_argument("-r", "--random", action="store_true", help="Apply a random theme and exit")
     parser.add_argument("-s", "--search", metavar="TERM", help="Search themes by name, slug, or badge and exit")
     parser.add_argument("-w", "--web", action="store_true", help="Launch live interactive Web Studio in your browser")
@@ -432,9 +520,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     did_non_interactive = False
+    chosen_theme: dict[str, object] | None = None
 
     if args.random:
         pick_t = random.choice(themes)
+        chosen_theme = pick_t
         res = apply_theme(pick_t, force_white=args.force_white_text, keep_input=args.keep_input)
         report_theme_applied(res, force_white=args.force_white_text, keep_input=args.keep_input)
         did_non_interactive = True
@@ -446,11 +536,16 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        chosen_theme = theme
         res = apply_theme(theme, force_white=args.force_white_text, keep_input=args.keep_input)
         report_theme_applied(res, force_white=args.force_white_text, keep_input=args.keep_input)
         did_non_interactive = True
 
-    if args.dual:
+    if args.ascii_safe:
+        res_ascii = apply_ascii_safe_mode()
+        print(f"Applied ASCII-safe separators & Git symbols to {res_ascii['config_path']}")
+        did_non_interactive = True
+    elif args.dual:
         g1, c1, l1 = resolve_separator_input(args.dual[0])
         g2, c2, l2 = resolve_separator_input(args.dual[1])
         res_s = apply_separators(internal=(g1, c1), end=(g2, c2))
@@ -473,9 +568,60 @@ def main(argv: list[str] | None = None) -> int:
             report_separators_applied(res_s, label=f"Ending: {label}")
             did_non_interactive = True
 
-    if args.format is not None or args.two_line is not None:
-        res_l = apply_layout_options(format_str=args.format, new_line=args.two_line)
-        print(f"Updated layout options in {res_l['config_path']}")
+    has_layout = any(
+        x is not None
+        for x in (
+            args.format,
+            args.two_line,
+            args.max_pwd,
+            args.max_git,
+            args.max_pyenv,
+            args.max_kube,
+            args.prefix,
+            args.text_effect,
+            args.terminal_title,
+            args.fast_git_wsl,
+            args.git_timeout,
+            args.async_git,
+            args.min_duration,
+        )
+    )
+    if has_layout:
+        res_l = apply_layout_options(
+            format_str=args.format,
+            new_line=args.two_line,
+            max_pwd_char=args.max_pwd,
+            max_git_char=args.max_git,
+            max_pyenv_char=args.max_pyenv,
+            max_kube_char=args.max_kube,
+            prompt_prefix=args.prefix,
+            font_effect=args.text_effect,
+            enable_terminal_title=args.terminal_title,
+            git_skip_untracked_on_slow_fs=args.fast_git_wsl,
+            git_timeout_ms=args.git_timeout,
+            git_async_cache=args.async_git,
+            min_duration_ms=args.min_duration,
+        )
+        print(f"Updated layout & performance options in {res_l['config_path']}")
+        did_non_interactive = True
+
+    if args.sync_root:
+        res_root = sync_root_config(theme=chosen_theme)
+        print(f"Synced root prompt config ({res_root['theme']}) -> {res_root['root_config_path']}")
+        did_non_interactive = True
+
+    if args.sync_greeter or args.greeter_monitors is not None or args.hide_swap:
+        mons = (
+            [tok.strip() for tok in args.greeter_monitors.replace(",", " ").split() if tok.strip()]
+            if args.greeter_monitors is not None
+            else None
+        )
+        res_g = sync_greeter_theme(
+            theme=chosen_theme,
+            monitors=mons,
+            hide_swap_if_unavailable=args.hide_swap,
+        )
+        print(f"Synced greeter config ({res_g['theme']}) -> {res_g['config_path']}")
         did_non_interactive = True
 
     if did_non_interactive:

@@ -1,4 +1,4 @@
-"""Atomic configuration reader/writer, backups, layout controls, and JSON presets for synth-shell."""
+"""Atomic configuration reader/writer, backups, layout controls, root/greeter sync, and JSON presets."""
 
 from __future__ import annotations
 
@@ -11,7 +11,13 @@ from datetime import datetime
 from pathlib import Path
 
 from synth_shell_theme.patches import apply_runtime_patches, ensure_dual_separator_support, inspect_patches
-from synth_shell_theme.paths import get_backup_dir, get_config_dir, get_config_path
+from synth_shell_theme.paths import (
+    get_backup_dir,
+    get_config_dir,
+    get_config_path,
+    get_greeter_config_path,
+    get_root_config_path,
+)
 from synth_shell_theme.separators import (
     format_separator_assignment,
     get_separator_key,
@@ -19,6 +25,7 @@ from synth_shell_theme.separators import (
     resolve_separator_input,
 )
 from synth_shell_theme.themes import (
+    DEFAULT_SEGMENT_COLORS,
     SEGMENT_KEYS,
     find_theme,
     is_color_key,
@@ -35,7 +42,76 @@ VALID_FORMAT_TOKENS: tuple[str, ...] = (
     "TF",
     "KUBE",
     "CLOCK",
+    "STATUS",
+    "DURATION",
+    "AWS",
+    "GCP",
+    "DOCKER",
+    "NODE",
+    "SSH",
 )
+
+VALID_FONT_EFFECTS: tuple[str, ...] = (
+    "bold",
+    "regular",
+    "italic",
+    "dim",
+    "none",
+)
+
+GREETER_ALL_MONITORS: tuple[str, ...] = (
+    "OS",
+    "KERNEL",
+    "CPU",
+    "GPU",
+    "SHELL",
+    "DATE",
+    "UPTIME",
+    "USER",
+    "LOCALIPV4",
+    "EXTERNALIPV4",
+    "SERVICES",
+    "CPUTEMP",
+    "SYSLOAD_MON%",
+    "MEMORY_MON",
+    "SWAP_MON",
+    "HDDROOT_MON",
+    "HDDHOME_MON",
+    "PALETTE",
+)
+
+DEFAULT_GREETER_MONITORS: tuple[str, ...] = (
+    "OS",
+    "KERNEL",
+    "CPU",
+    "GPU",
+    "SHELL",
+    "DATE",
+    "UPTIME",
+    "LOCALIPV4",
+    "SERVICES",
+    "CPUTEMP",
+    "SYSLOAD_MON%",
+    "MEMORY_MON",
+    "SWAP_MON",
+    "HDDROOT_MON",
+    "HDDHOME_MON",
+    "PALETTE",
+)
+
+ASCII_SAFE_GIT_SYMBOLS: dict[str, str] = {
+    "git_symbol_synced": "",
+    "git_symbol_unpushed": " +",
+    "git_symbol_unpulled": " -",
+    "git_symbol_unpushedunpulled": " <>",
+    "git_symbol_dirty": " *",
+    "git_symbol_dirty_unpushed": " *+",
+    "git_symbol_dirty_unpulled": " *-",
+    "git_symbol_dirty_unpushedunpulled": " *<>",
+    "git_symbol_stash": "#",
+    "pwd_trunc_symbol": "...",
+    "status_symbol": "! ",
+}
 
 
 def _atomic_write(target: Path, content: str) -> None:
@@ -90,6 +166,28 @@ def _unquote(val: str) -> str:
     if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
         return s[1:-1]
     return s
+
+
+def _escape_bash_dq(val: str) -> str:
+    return val.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _upsert_kv_lines(lines: list[str], updates: dict[str, str]) -> list[str]:
+    """Update existing `key=...` lines in-place and append any missing keys cleanly."""
+    new_lines: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        m = re.match(r"^(\w+)\s*=", line)
+        key = m.group(1) if m else ""
+        if key in updates:
+            new_lines.append(f'{key}="{_escape_bash_dq(updates[key])}"')
+            seen.add(key)
+        else:
+            new_lines.append(line)
+    for key, val in updates.items():
+        if key not in seen:
+            new_lines.append(f'{key}="{_escape_bash_dq(val)}"')
+    return new_lines
 
 
 def backup_config(config_dir: Path | None = None) -> Path | None:
@@ -243,7 +341,6 @@ def detect_current_theme(
     if not current and not header_title:
         return None, None
 
-    # 1. Exact color score across core prompt segments
     color_keys = [
         "font_color_host",
         "background_host",
@@ -269,7 +366,6 @@ def detect_current_theme(
     if best_score >= 6:
         return best_match
 
-    # 2. If `--force-white-text` was used, background keys + header title match cleanly
     bg_keys = [
         "background_host",
         "background_pwd",
@@ -299,7 +395,7 @@ def read_current_state(
     themes: list[dict[str, object]] | None = None,
     config_dir: Path | None = None,
 ) -> dict[str, object]:
-    """Read complete active prompt configuration state."""
+    """Read complete active prompt configuration state (v1.0 + v1.1 fields)."""
     base = config_dir if config_dir is not None else get_config_dir()
     cfg = get_config_path(base)
     catalog = themes if themes is not None else load_themes()
@@ -313,6 +409,16 @@ def read_current_state(
     new_line = True
     vertical_padding = True
     max_pwd_char = 35
+    max_git_char = 0
+    max_pyenv_char = 0
+    max_kube_char = 28
+    prompt_prefix = ""
+    font_effect = "bold"
+    enable_terminal_title = True
+    git_skip_untracked_on_slow_fs = True
+    git_timeout_ms = 0
+    git_async_cache = False
+    min_duration_ms = 2000
     colors: dict[str, str] = {}
 
     if cfg.is_file():
@@ -333,13 +439,34 @@ def read_current_state(
                 vertical_padding = val.lower() in ("true", "1", "yes")
             elif key == "max_pwd_char" and val.isdigit():
                 max_pwd_char = int(val)
+            elif key == "max_git_char" and val.isdigit():
+                max_git_char = int(val)
+            elif key == "max_pyenv_char" and val.isdigit():
+                max_pyenv_char = int(val)
+            elif key == "max_kube_char" and val.isdigit():
+                max_kube_char = int(val)
+            elif key == "prompt_prefix":
+                prompt_prefix = val
+            elif key == "font_effect_override" and val.lower() in VALID_FONT_EFFECTS:
+                font_effect = val.lower()
+            elif key == "enable_terminal_title":
+                enable_terminal_title = val.lower() in ("true", "1", "yes")
+            elif key == "git_skip_untracked_on_slow_fs":
+                git_skip_untracked_on_slow_fs = val.lower() in ("true", "1", "yes")
+            elif key == "git_timeout_ms" and val.isdigit():
+                git_timeout_ms = int(val)
+            elif key == "git_async_cache":
+                git_async_cache = val.lower() in ("true", "1", "yes")
+            elif key == "min_duration_ms" and val.isdigit():
+                min_duration_ms = int(val)
             elif is_color_key(key):
                 colors[key] = val
 
     segments_css: dict[str, dict[str, str | None]] = {}
     for seg in SEGMENT_KEYS:
-        fg_tok = colors.get(f"font_color_{seg}", "white")
-        bg_tok = colors.get(f"background_{seg}", "none" if seg == "input" else "237")
+        def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
+        fg_tok = colors.get(f"font_color_{seg}", def_fg)
+        bg_tok = colors.get(f"background_{seg}", def_bg)
         segments_css[seg] = {
             "fg": token_to_hex(fg_tok, "#ffffff"),
             "bg": token_to_hex(bg_tok, None),
@@ -350,6 +477,7 @@ def read_current_state(
     return {
         "config_exists": cfg.is_file(),
         "config_path": str(cfg),
+        "root_config_exists": get_root_config_path(base).is_file(),
         "active_theme": active_name,
         "active_theme_id": active_id,
         "internal_separator": {
@@ -368,6 +496,16 @@ def read_current_state(
         "enable_command_on_new_line": new_line,
         "enable_vertical_padding": vertical_padding,
         "max_pwd_char": max_pwd_char,
+        "max_git_char": max_git_char,
+        "max_pyenv_char": max_pyenv_char,
+        "max_kube_char": max_kube_char,
+        "prompt_prefix": prompt_prefix,
+        "font_effect": font_effect,
+        "enable_terminal_title": enable_terminal_title,
+        "git_skip_untracked_on_slow_fs": git_skip_untracked_on_slow_fs,
+        "git_timeout_ms": git_timeout_ms,
+        "git_async_cache": git_async_cache,
+        "min_duration_ms": min_duration_ms,
         "colors": colors,
         "segments_css": segments_css,
         "patches": inspect_patches(base),
@@ -385,7 +523,6 @@ def apply_theme(
     base = config_dir if config_dir is not None else get_config_dir()
     cfg = get_config_path(base)
 
-    # Ensure 256-color parity patch is active if synth-shell is installed
     patch_state = inspect_patches(base)
     if patch_state["prompt_script_found"] and not patch_state["color_256_parity"]:
         apply_runtime_patches(base, tune_defaults=False)
@@ -558,10 +695,20 @@ def apply_layout_options(
     new_line: bool | None = None,
     vertical_padding: bool | None = None,
     max_pwd_char: int | None = None,
+    max_git_char: int | None = None,
+    max_pyenv_char: int | None = None,
+    max_kube_char: int | None = None,
+    prompt_prefix: str | None = None,
+    font_effect: str | None = None,
+    enable_terminal_title: bool | None = None,
+    git_skip_untracked_on_slow_fs: bool | None = None,
+    git_timeout_ms: int | None = None,
+    git_async_cache: bool | None = None,
+    min_duration_ms: int | None = None,
     create_backup: bool = True,
     config_dir: Path | None = None,
 ) -> dict[str, object]:
-    """Update non-color prompt layout settings (`format`, 2-line prompt, vertical padding, `max_pwd_char`)."""
+    """Update prompt layout, truncation, prefix, text effect, titlebar, and Git/duration speed settings."""
     base = config_dir if config_dir is not None else get_config_dir()
     cfg = get_config_path(base)
 
@@ -569,63 +716,295 @@ def apply_layout_options(
         themes = load_themes()
         apply_theme(themes[1] if len(themes) > 1 else themes[0], create_backup=False, config_dir=base)
 
+    updates: dict[str, str] = {}
     clean_format: str | None = None
     if format_str is not None:
         tokens = [t for t in format_str.upper().replace(",", " ").split() if t in VALID_FORMAT_TOKENS]
         if tokens:
             clean_format = " ".join(tokens)
+            updates["format"] = clean_format
 
+    if new_line is not None:
+        updates["enable_command_on_new_line"] = "true" if new_line else "false"
+    if vertical_padding is not None:
+        updates["enable_vertical_padding"] = "true" if vertical_padding else "false"
     if max_pwd_char is not None:
         max_pwd_char = max(10, min(120, int(max_pwd_char)))
+        updates["max_pwd_char"] = str(max_pwd_char)
+    if max_git_char is not None:
+        max_git_char = max(0, min(80, int(max_git_char)))
+        updates["max_git_char"] = str(max_git_char)
+    if max_pyenv_char is not None:
+        max_pyenv_char = max(0, min(60, int(max_pyenv_char)))
+        updates["max_pyenv_char"] = str(max_pyenv_char)
+    if max_kube_char is not None:
+        max_kube_char = max(0, min(60, int(max_kube_char)))
+        updates["max_kube_char"] = str(max_kube_char)
+    if prompt_prefix is not None:
+        updates["prompt_prefix"] = prompt_prefix
+    if font_effect is not None:
+        eff = font_effect.strip().lower()
+        if eff not in VALID_FONT_EFFECTS:
+            raise ValueError(f"Invalid font effect '{font_effect}'. Expected one of: {', '.join(VALID_FONT_EFFECTS)}")
+        updates["font_effect_override"] = "" if eff == "bold" else ("none" if eff == "regular" else eff)
+    if enable_terminal_title is not None:
+        updates["enable_terminal_title"] = "true" if enable_terminal_title else "false"
+    if git_skip_untracked_on_slow_fs is not None:
+        updates["git_skip_untracked_on_slow_fs"] = "true" if git_skip_untracked_on_slow_fs else "false"
+    if git_timeout_ms is not None:
+        git_timeout_ms = max(0, min(10000, int(git_timeout_ms)))
+        updates["git_timeout_ms"] = str(git_timeout_ms)
+    if git_async_cache is not None:
+        updates["git_async_cache"] = "true" if git_async_cache else "false"
+    if min_duration_ms is not None:
+        min_duration_ms = max(100, min(60000, int(min_duration_ms)))
+        updates["min_duration_ms"] = str(min_duration_ms)
 
-    bak = backup_config(base) if create_backup else None
-    lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
-    new_lines: list[str] = []
-    seen: set[str] = set()
+    bak = backup_config(base) if (create_backup and updates) else None
+    if updates:
+        lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
+        new_lines = _upsert_kv_lines(lines, updates)
+        _atomic_write(cfg, "\n".join(new_lines) + "\n")
 
-    for line in lines:
-        m = re.match(r"^(\w+)\s*=", line)
-        key = m.group(1) if m else ""
-        if key == "format" and clean_format is not None:
-            new_lines.append(f'format="{clean_format}"')
-            seen.add("format")
-        elif key == "enable_command_on_new_line" and new_line is not None:
-            new_lines.append(f'enable_command_on_new_line="{"true" if new_line else "false"}"')
-            seen.add("enable_command_on_new_line")
-        elif key == "enable_vertical_padding" and vertical_padding is not None:
-            new_lines.append(f'enable_vertical_padding="{"true" if vertical_padding else "false"}"')
-            seen.add("enable_vertical_padding")
-        elif key == "max_pwd_char" and max_pwd_char is not None:
-            new_lines.append(f'max_pwd_char="{max_pwd_char}"')
-            seen.add("max_pwd_char")
-        else:
-            new_lines.append(line)
-
-    if clean_format is not None and "format" not in seen:
-        new_lines.append(f'format="{clean_format}"')
-    if new_line is not None and "enable_command_on_new_line" not in seen:
-        new_lines.append(f'enable_command_on_new_line="{"true" if new_line else "false"}"')
-    if vertical_padding is not None and "enable_vertical_padding" not in seen:
-        new_lines.append(f'enable_vertical_padding="{"true" if vertical_padding else "false"}"')
-    if max_pwd_char is not None and "max_pwd_char" not in seen:
-        new_lines.append(f'max_pwd_char="{max_pwd_char}"')
-
-    _atomic_write(cfg, "\n".join(new_lines) + "\n")
     return {
         "format": clean_format,
         "enable_command_on_new_line": new_line,
         "enable_vertical_padding": vertical_padding,
         "max_pwd_char": max_pwd_char,
+        "max_git_char": max_git_char,
+        "max_pyenv_char": max_pyenv_char,
+        "max_kube_char": max_kube_char,
+        "prompt_prefix": prompt_prefix,
+        "font_effect": font_effect,
+        "enable_terminal_title": enable_terminal_title,
+        "git_skip_untracked_on_slow_fs": git_skip_untracked_on_slow_fs,
+        "git_timeout_ms": git_timeout_ms,
+        "git_async_cache": git_async_cache,
+        "min_duration_ms": min_duration_ms,
         "backup": str(bak) if bak else None,
         "config_path": str(cfg),
     }
 
 
+def apply_ascii_safe_mode(
+    separator: str = ">",
+    create_backup: bool = True,
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Configure ASCII-safe separators and Git/truncation symbols for hosts without Nerd Fonts."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    cfg = get_config_path(base)
+
+    if not cfg.is_file():
+        themes = load_themes()
+        apply_theme(themes[1] if len(themes) > 1 else themes[0], create_backup=False, config_dir=base)
+
+    bak = backup_config(base) if create_backup else None
+    sep_clean = separator if separator in (">", "|", "/", "»") else ">"
+    apply_separators(
+        internal=(sep_clean, sep_clean),
+        end=(sep_clean, sep_clean),
+        create_backup=False,
+        config_dir=base,
+    )
+    lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
+    new_lines = _upsert_kv_lines(lines, ASCII_SAFE_GIT_SYMBOLS)
+    _atomic_write(cfg, "\n".join(new_lines) + "\n")
+    return {
+        "separator": sep_clean,
+        "symbols_updated": len(ASCII_SAFE_GIT_SYMBOLS),
+        "backup": str(bak) if bak else None,
+        "config_path": str(cfg),
+    }
+
+
+def sync_root_config(
+    theme: dict[str, object] | None = None,
+    root_accent: str = "196",
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Generate/sync `synth-shell-prompt.root.config` matching active theme with a root warning accent."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    root_cfg = get_root_config_path(base)
+    catalog = load_themes()
+    state = read_current_state(catalog, base)
+
+    if theme is None:
+        active_id = state.get("active_theme_id")
+        if isinstance(active_id, int) and 1 <= active_id <= len(catalog):
+            theme = catalog[active_id - 1]
+        else:
+            tokyo, _ = find_theme("tokyo-night", catalog)
+            theme = tokyo or catalog[0]
+
+    theme_title = str(theme.get("name", "Active Theme"))
+    int_code = str(state["internal_separator"]["code"])  # type: ignore[index]
+    end_code = str(state["end_separator"]["code"])  # type: ignore[index]
+    fmt = str(state.get("format") or "USER HOST PWD GIT")
+    if "USER" not in fmt.split():
+        fmt = f"USER {fmt}"
+
+    lines = [
+        f"# Root Prompt Sync — based on {theme_title} (synth-shell-theme)",
+        f'format="{fmt}"',
+        format_separator_assignment("separator_char", int_code),
+        format_separator_assignment("separator_char_end", end_code),
+        f'enable_vertical_padding="{"true" if state["enable_vertical_padding"] else "false"}"',
+        f'enable_command_on_new_line="{"true" if state["enable_command_on_new_line"] else "false"}"',
+        f'max_pwd_char="{state["max_pwd_char"]}"',
+        "",
+        "# High-visibility root warning accent on USER & HOST",
+        'font_color_user="white"',
+        f'background_user="{root_accent}"',
+        'texteffect_user="bold"',
+        'font_color_host="white"',
+        'background_host="52"',
+        'texteffect_host="bold"',
+        "",
+        "# Remaining segments synced from active theme",
+    ]
+    for seg in ("pwd", "git", "pyenv", "tf", "kube", "clock", "status", "duration", "aws", "gcp", "docker", "node", "ssh"):
+        def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
+        fg = str(theme.get(f"font_color_{seg}", def_fg))
+        bg = str(theme.get(f"background_{seg}", def_bg))
+        lines.append(f'font_color_{seg}="{fg}"')
+        lines.append(f'background_{seg}="{bg}"')
+
+    lines.extend(
+        [
+            f'font_color_input="{root_accent}"',
+            'background_input="none"',
+            'texteffect_input="bold"',
+        ]
+    )
+    _atomic_write(root_cfg, "\n".join(lines) + "\n")
+    return {
+        "theme": theme_title,
+        "root_accent": root_accent,
+        "root_config_path": str(root_cfg),
+    }
+
+
+def _system_has_swap() -> bool:
+    """Return True if Linux `/proc/swaps` reports at least one active swap device."""
+    swaps = Path("/proc/swaps")
+    if not swaps.is_file():
+        return True
+    try:
+        lines = [ln for ln in swaps.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+        return len(lines) > 1
+    except OSError:
+        return True
+
+
+def read_greeter_state(config_dir: Path | None = None) -> dict[str, object]:
+    """Read current `synth-shell-greeter.config` monitors and format accents."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    gcfg = get_greeter_config_path(base)
+    monitors = list(DEFAULT_GREETER_MONITORS)
+    formats: dict[str, str] = {}
+
+    if gcfg.is_file():
+        text = gcfg.read_text(encoding="utf-8", errors="replace")
+        m_pi = re.search(r'print_info\s*=\s*"([^"]*)"', text, re.DOTALL)
+        if m_pi:
+            parsed = [tok.strip() for tok in m_pi.group(1).split() if tok.strip()]
+            if parsed:
+                monitors = parsed
+        for key in ("format_info", "format_highlight", "format_crit", "format_deco", "format_ok", "format_error", "format_logo"):
+            m_f = re.search(rf'^{key}\s*=\s*"([^"]*)"', text, re.MULTILINE)
+            if m_f:
+                formats[key] = " ".join(m_f.group(1).split())
+
+    return {
+        "config_exists": gcfg.is_file(),
+        "config_path": str(gcfg),
+        "monitors": monitors,
+        "available_monitors": list(GREETER_ALL_MONITORS),
+        "formats": formats,
+        "has_swap": _system_has_swap(),
+    }
+
+
+def sync_greeter_theme(
+    theme: dict[str, object] | None = None,
+    monitors: list[str] | None = None,
+    hide_swap_if_unavailable: bool = False,
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Sync active prompt theme colors and/or monitor visibility into `synth-shell-greeter.config`."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    gcfg = get_greeter_config_path(base)
+    catalog = load_themes()
+    state = read_current_state(catalog, base)
+
+    if theme is None:
+        active_id = state.get("active_theme_id")
+        if isinstance(active_id, int) and 1 <= active_id <= len(catalog):
+            theme = catalog[active_id - 1]
+        else:
+            tokyo, _ = find_theme("tokyo-night", catalog)
+            theme = tokyo or catalog[0]
+
+    theme_title = str(theme.get("name", "Active Theme"))
+    accent_primary = str(theme.get("background_host") or "blue")
+    accent_ok = str(theme.get("background_git") or "green")
+    accent_deco = str(theme.get("font_color_input") or theme.get("background_pwd") or "white")
+    accent_crit = str(theme.get("background_tf") or "208")
+
+    fmt_updates = {
+        "format_info": "-c white",
+        "format_highlight": f"-c {accent_primary} -e bold",
+        "format_crit": f"-c {accent_crit} -e bold",
+        "format_deco": f"-c {accent_deco} -e bold",
+        "format_ok": f"-c {accent_ok} -e bold",
+        "format_error": "-c 196 -e bold",
+        "format_logo": f"-c {accent_primary} -e bold",
+    }
+
+    current_greeter = read_greeter_state(base)
+    final_monitors = list(monitors) if monitors is not None else list(current_greeter["monitors"])  # type: ignore[arg-type]
+    if hide_swap_if_unavailable and not _system_has_swap():
+        final_monitors = [m for m in final_monitors if not m.startswith("SWAP_MON")]
+
+    print_info_block = 'print_info="\n' + "\n".join(f"\t{m}" for m in final_monitors) + '\n"'
+
+    if gcfg.is_file():
+        bdir = get_backup_dir(base)
+        bdir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(gcfg, bdir / f"{gcfg.name}.{stamp}.bak")
+        text = gcfg.read_text(encoding="utf-8", errors="replace")
+        if re.search(r'print_info\s*=\s*"[^"]*"', text, re.DOTALL):
+            text = re.sub(r'print_info\s*=\s*"[^"]*"', lambda _: print_info_block, text, count=1, flags=re.DOTALL)
+        else:
+            text = text.rstrip() + "\n\n" + print_info_block + "\n"
+        lines = _upsert_kv_lines(text.splitlines(), fmt_updates)
+        _atomic_write(gcfg, "\n".join(lines) + "\n")
+    else:
+        header = [
+            f"# Synth-Shell Greeter Config — synced with {theme_title} (synth-shell-theme)",
+            "",
+            print_info_block,
+            "",
+        ]
+        for k, v in fmt_updates.items():
+            header.append(f'{k}="{v}"')
+        _atomic_write(gcfg, "\n".join(header) + "\n")
+
+    return {
+        "theme": theme_title,
+        "config_path": str(gcfg),
+        "monitors": final_monitors,
+        "formats": fmt_updates,
+    }
+
+
 def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
-    """Export active colors, dual separators, and layout options into a portable JSON preset."""
+    """Export active colors, dual separators, layout, truncation, and speed options into a JSON preset."""
     state = read_current_state(config_dir=config_dir)
     payload = {
-        "schema": "synth-shell-theme-preset/v1",
+        "schema": "synth-shell-theme-preset/v2",
         "active_theme": state["active_theme"],
         "active_theme_id": state["active_theme_id"],
         "internal_separator": state["internal_separator"],
@@ -634,6 +1013,16 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
         "enable_command_on_new_line": state["enable_command_on_new_line"],
         "enable_vertical_padding": state["enable_vertical_padding"],
         "max_pwd_char": state["max_pwd_char"],
+        "max_git_char": state["max_git_char"],
+        "max_pyenv_char": state["max_pyenv_char"],
+        "max_kube_char": state["max_kube_char"],
+        "prompt_prefix": state["prompt_prefix"],
+        "font_effect": state["font_effect"],
+        "enable_terminal_title": state["enable_terminal_title"],
+        "git_skip_untracked_on_slow_fs": state["git_skip_untracked_on_slow_fs"],
+        "git_timeout_ms": state["git_timeout_ms"],
+        "git_async_cache": state["git_async_cache"],
+        "min_duration_ms": state["min_duration_ms"],
         "colors": state["colors"],
     }
     dest = Path(dest_path).expanduser()
@@ -642,7 +1031,7 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
 
 
 def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, object]:
-    """Import and apply a JSON preset file created by `export_preset`."""
+    """Import and apply a JSON preset file (supports both v1 and v2 schemas)."""
     base = config_dir if config_dir is not None else get_config_dir()
     src = Path(src_path).expanduser()
     data = json.loads(src.read_text(encoding="utf-8"))
@@ -685,6 +1074,18 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
         new_line=bool(data["enable_command_on_new_line"]) if "enable_command_on_new_line" in data else None,
         vertical_padding=bool(data["enable_vertical_padding"]) if "enable_vertical_padding" in data else None,
         max_pwd_char=int(data["max_pwd_char"]) if "max_pwd_char" in data else None,
+        max_git_char=int(data["max_git_char"]) if "max_git_char" in data else None,
+        max_pyenv_char=int(data["max_pyenv_char"]) if "max_pyenv_char" in data else None,
+        max_kube_char=int(data["max_kube_char"]) if "max_kube_char" in data else None,
+        prompt_prefix=str(data["prompt_prefix"]) if "prompt_prefix" in data else None,
+        font_effect=str(data["font_effect"]) if "font_effect" in data else None,
+        enable_terminal_title=bool(data["enable_terminal_title"]) if "enable_terminal_title" in data else None,
+        git_skip_untracked_on_slow_fs=(
+            bool(data["git_skip_untracked_on_slow_fs"]) if "git_skip_untracked_on_slow_fs" in data else None
+        ),
+        git_timeout_ms=int(data["git_timeout_ms"]) if "git_timeout_ms" in data else None,
+        git_async_cache=bool(data["git_async_cache"]) if "git_async_cache" in data else None,
+        min_duration_ms=int(data["min_duration_ms"]) if "min_duration_ms" in data else None,
         create_backup=False,
         config_dir=base,
     )
