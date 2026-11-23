@@ -841,11 +841,11 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tlocal osc_pre="" osc_post=""
 \tif [[ "${SSP_ENABLE_OSC133:-true}" == "true" ]]; then
 \t\tif (( ${_SSP_HAS_RUN:-0} == 1 )); then
-\t\t\tosc_pre="\\[\\e]133;D;${last_exit}\\e\\\\\\]\\[\\e]133;A\\e\\\\\\]"
+\t\t\tosc_pre="\\[\\e]133;D;${last_exit}\\a\\]\\[\\e]133;A\\a\\]"
 \t\telse
-\t\t\tosc_pre="\\[\\e]133;A\\e\\\\\\]"
+\t\t\tosc_pre="\\[\\e]133;A\\a\\]"
 \t\tfi
-\t\tosc_post="\\[\\e]133;B\\e\\\\\\]"
+\t\tosc_post="\\[\\e]133;B\\a\\]"
 \t\t_SSP_HAS_RUN=1
 \tfi
 
@@ -945,7 +945,7 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \t_SSP_CMD_START_MS=0
 \t_SSP_HAS_RUN=0
 \tlocal _ps0_osc=""
-\t[[ "${SSP_ENABLE_OSC133}" == "true" ]] && _ps0_osc=$'\\e]133;C\\e\\\\'
+\t[[ "${SSP_ENABLE_OSC133}" == "true" ]] && _ps0_osc=$'\\e]133;C\\a'
 \tif [[ -n "${EPOCHREALTIME:-}" ]]; then
 \t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=${EPOCHREALTIME/./}/1000, 0))}'
 \telse
@@ -1231,7 +1231,11 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         if has_full_hook
         else True
     )
-    osc133_semantic = ("synth-shell-theme: osc133_semantic" in content) if has_full_hook else True
+    osc133_semantic = (
+        ("synth-shell-theme: osc133_semantic" in content and "133;A\\e\\\\" not in content and "133;C\\e\\\\" not in content)
+        if has_full_hook
+        else True
+    )
     right_prompt = ("synth-shell-theme: right_prompt" in content) if has_full_hook else True
     responsive_width = ("synth-shell-theme: responsive_width" in content) if has_full_hook else True
     hook_chaining = (
@@ -1417,6 +1421,8 @@ def apply_runtime_patches(
             or "synth-shell-theme: v13_init" not in updated
             or "synth-shell-theme: osc133_semantic" not in updated
             or "synth-shell-theme: right_prompt" not in updated
+            or "133;A\\e\\\\" in updated
+            or "133;C\\e\\\\" in updated
         ):
             had_dual = "separator_char_end" in updated
             if _V11_SEGS_BLOCK_RE.search(updated):
@@ -1443,7 +1449,7 @@ def apply_runtime_patches(
             # Remove destructive DEBUG trap (replaced by PS0 reset)
             updated = _DEBUG_TRAP_RE.sub("", updated, count=1)
 
-            if "synth-shell-theme: v13_init" not in updated:
+            if "synth-shell-theme: v13_init" not in updated or "133;C\\e\\\\" in updated:
                 if _V11_INIT_AND_PC_RE.search(updated):
                     updated = _V11_INIT_AND_PC_RE.sub(lambda _: V12_INIT_AND_CHAINING, updated, count=1)
                 elif "\tPROMPT_COMMAND=prompt_command_hook" in updated:

@@ -970,6 +970,7 @@ fi
                     'GS="$(getGitBranch)"; echo "GIT=$GS"; '
                     'prompt_command_hook; prompt_command_hook; '
                     '[[ "$PS1" == *"133;A"* && "$PS1" == *"133;B"* && "$PS1" == *"133;D;"* ]] && echo "OSC133_OK"; '
+                    r'''exp="${PS1@P}"; clean="${exp//$'\x1b]'/}"; [[ "$clean" != *']'* ]] && echo "NO_STRAY_BRACKET_OK"; '''
                     '[[ "$PS1" == *"───"* ]] && echo "RPROMPT_OK"; '
                     '[[ "$PS0" == *"133;C"* ]] && echo "PS0_C_OK"'
                 )
@@ -978,6 +979,7 @@ fi
                 out = r_bash.stdout
                 self.assertIn("REBASE 2/5", out)
                 self.assertIn("OSC133_OK", out)
+                self.assertIn("NO_STRAY_BRACKET_OK", out)
                 self.assertIn("RPROMPT_OK", out)
                 self.assertIn("PS0_C_OK", out)
 
