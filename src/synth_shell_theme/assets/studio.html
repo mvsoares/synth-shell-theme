@@ -694,6 +694,10 @@
               <span>OSC 133 semantic markers (Ghostty/Kitty/WT/VS Code)</span>
             </label>
             <label class="toggle-label">
+              <input type="checkbox" id="chk-term-sanitize" checked />
+              <span>Auto-sanitize leaked SSH/TUI mouse tracking (<code>?1000l/?1003l/?1006l</code>)</span>
+            </label>
+            <label class="toggle-label">
               <input type="checkbox" id="chk-git-state" checked />
               <span>Git rebase/merge/worktree state</span>
             </label>
@@ -1224,6 +1228,7 @@
       _renderDraggablePills("right-segment-toggles", "rightSegments", true);
       document.getElementById("inp-right-fill").value = state.rightFillChar || "─";
       document.getElementById("chk-osc133").checked = state.enableOsc133;
+      document.getElementById("chk-term-sanitize").checked = state.enableTerminalSanitize;
       document.getElementById("chk-git-state").checked = state.gitShowState;
 
       document.getElementById("chk-two-line").checked = state.twoLine;
@@ -1262,6 +1267,7 @@
         ["v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"],
         ["v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT + OSC 133"],
         ["osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"],
+        ["terminal_sanitize", "Auto-sanitize leaked SSH/TUI mouse tracking & focus reporting"],
         ["right_prompt", "Right-aligned top bar (right_format + connector line)"],
         ["responsive_width", "Responsive compact prompt on narrow tmux/VS Code splits"],
         ["hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (no DEBUG trap conflict)"],
@@ -1367,6 +1373,7 @@
       }
       state.rightFillChar = String(srvState.right_fill_char || "─");
       state.enableOsc133 = srvState.enable_osc133 !== false;
+      state.enableTerminalSanitize = srvState.enable_terminal_sanitize !== false;
       state.gitShowState = srvState.git_show_state !== false;
       state.batteryThreshold = Number(srvState.battery_threshold || 100);
       state.twoLine = Boolean(srvState.enable_command_on_new_line);
@@ -1554,6 +1561,7 @@
       renderWorkbench();
     });
     document.getElementById("chk-osc133").addEventListener("change", e => { state.enableOsc133 = e.target.checked; });
+    document.getElementById("chk-term-sanitize").addEventListener("change", e => { state.enableTerminalSanitize = e.target.checked; });
     document.getElementById("chk-git-state").addEventListener("change", e => { state.gitShowState = e.target.checked; });
 
     document.getElementById("btn-sync-ecosystem").addEventListener("click", async () => {
@@ -1726,6 +1734,7 @@
         right_format: state.rightSegments,
         right_fill_char: state.rightFillChar,
         enable_osc133: state.enableOsc133,
+        enable_terminal_sanitize: state.enableTerminalSanitize,
         git_show_state: state.gitShowState,
         enable_command_on_new_line: state.twoLine,
         enable_vertical_padding: state.verticalPadding,

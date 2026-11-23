@@ -128,6 +128,7 @@ def handle_apply_payload(
         "right_format",
         "right_fill_char",
         "enable_osc133",
+        "enable_terminal_sanitize",
         "git_show_state",
         "battery_threshold",
         "enable_command_on_new_line",
@@ -171,6 +172,9 @@ def handle_apply_payload(
             right_format_str=rfmt_str,
             right_fill_char=str(payload["right_fill_char"]) if "right_fill_char" in payload else None,
             enable_osc133=bool(payload["enable_osc133"]) if "enable_osc133" in payload else None,
+            enable_terminal_sanitize=(
+                bool(payload["enable_terminal_sanitize"]) if "enable_terminal_sanitize" in payload else None
+            ),
             git_show_state=bool(payload["git_show_state"]) if "git_show_state" in payload else None,
             battery_threshold=int(payload["battery_threshold"]) if "battery_threshold" in payload else None,  # type: ignore[arg-type]
             new_line=bool(payload["enable_command_on_new_line"]) if "enable_command_on_new_line" in payload else None,

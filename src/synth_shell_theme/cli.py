@@ -147,6 +147,7 @@ def _cmd_doctor(as_json: bool = False) -> int:
         ("v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"),
         ("v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT top bar + OSC 133"),
         ("osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"),
+        ("terminal_sanitize", "Auto-sanitize leaked SSH/TUI mouse tracking & focus reporting on prompt"),
         ("right_prompt", "Right-aligned top bar (`right_format` + connector fill line)"),
         ("responsive_width", "Responsive compact layout on narrow tmux/VS Code splits (<90 cols)"),
         ("hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (direnv/zoxide/atuin/ble.sh safe)"),
@@ -523,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--right-fill", default=None, metavar="CHAR", help='Connector character between left & right prompt bars (default: "─")')
     parser.add_argument("--osc133", dest="osc133", action="store_true", default=None, help="Enable OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)")
     parser.add_argument("--no-osc133", dest="osc133", action="store_false", help="Disable OSC 133 semantic prompt markers")
+    parser.add_argument("--terminal-sanitize", dest="terminal_sanitize", action="store_true", default=None, help="Auto-disable leaked SSH/TUI mouse tracking & focus reporting on prompt return")
+    parser.add_argument("--no-terminal-sanitize", dest="terminal_sanitize", action="store_false", help="Disable automatic terminal mode sanitization on prompt return")
     parser.add_argument("--git-state", dest="git_state", action="store_true", default=None, help="Show Git rebase/merge/cherry-pick/bisect & worktree state")
     parser.add_argument("--no-git-state", dest="git_state", action="store_false", help="Hide Git rebase/merge/worktree state")
     parser.add_argument("--battery-threshold", type=int, default=None, metavar="PCT", help="Only show BATTERY segment at or below PCT%% (default: 100)")
@@ -704,6 +707,7 @@ def main(argv: list[str] | None = None) -> int:
             args.right_format,
             args.right_fill,
             args.osc133,
+            args.terminal_sanitize,
             args.git_state,
             args.battery_threshold,
             args.two_line,
@@ -731,6 +735,7 @@ def main(argv: list[str] | None = None) -> int:
             right_format_str=args.right_format,
             right_fill_char=args.right_fill,
             enable_osc133=args.osc133,
+            enable_terminal_sanitize=args.terminal_sanitize,
             git_show_state=args.git_state,
             battery_threshold=args.battery_threshold,
             new_line=args.two_line,

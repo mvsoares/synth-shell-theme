@@ -764,6 +764,10 @@ combine_elements()
 V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 {
 \tlocal last_exit=$?
+\t# synth-shell-theme: terminal_sanitize (auto-clear leaked SSH/TUI mouse tracking & focus reporting)
+\tif [[ "${SSP_TERMINAL_SANITIZE:-true}" == "true" && -z "${BLE_VERSION:-}" ]] && [[ -t 1 || "${SSP_FORCE_SANITIZE:-}" == "1" ]]; then
+\t\tprintf '\\e[?1000l\\e[?1002l\\e[?1003l\\e[?1006l\\e[?1015l\\e[?1004l'
+\tfi
 \tlocal elements=(${SSP_ELEMENTS[@]+"${SSP_ELEMENTS[@]}"})
 \tlocal right_elements=(${SSP_RIGHT_ELEMENTS[@]+"${SSP_RIGHT_ELEMENTS[@]}"})
 \tlocal user="${USER:-}"
@@ -901,6 +905,7 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \tSSP_RIGHT_ELEMENTS=(${right_format:-})
 \tSSP_RIGHT_FILL_CHAR="${right_fill_char:-─}"
 \tSSP_ENABLE_OSC133=${enable_osc133:-true}
+\tSSP_TERMINAL_SANITIZE=${enable_terminal_sanitize:-true}
 \tSSP_GIT_SHOW_STATE=${git_show_state:-true}
 \tSSP_BATTERY_THRESHOLD=${battery_threshold:-100}
 \tSSP_COLORS_STATUS=(${font_color_status:-white} ${background_status:-196} ${texteffect_status:-bold})
@@ -1170,6 +1175,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
             "v12_segments": False,
             "v13_segments": False,
             "osc133_semantic": False,
+            "terminal_sanitize": False,
             "right_prompt": False,
             "responsive_width": False,
             "hook_chaining": False,
@@ -1236,6 +1242,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         if has_full_hook
         else True
     )
+    terminal_sanitize = ("synth-shell-theme: terminal_sanitize" in content) if has_full_hook else True
     right_prompt = ("synth-shell-theme: right_prompt" in content) if has_full_hook else True
     responsive_width = ("synth-shell-theme: responsive_width" in content) if has_full_hook else True
     hook_chaining = (
@@ -1285,6 +1292,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         and v12_segments
         and v13_segments
         and osc133_semantic
+        and terminal_sanitize
         and right_prompt
         and responsive_width
         and hook_chaining
@@ -1309,6 +1317,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         "v12_segments": v12_segments,
         "v13_segments": v13_segments,
         "osc133_semantic": osc133_semantic,
+        "terminal_sanitize": terminal_sanitize,
         "right_prompt": right_prompt,
         "responsive_width": responsive_width,
         "hook_chaining": hook_chaining,
@@ -1420,6 +1429,7 @@ def apply_runtime_patches(
             "synth-shell-theme: v13_segments" not in updated
             or "synth-shell-theme: v13_init" not in updated
             or "synth-shell-theme: osc133_semantic" not in updated
+            or "synth-shell-theme: terminal_sanitize" not in updated
             or "synth-shell-theme: right_prompt" not in updated
             or "133;A\\e\\\\" in updated
             or "133;C\\e\\\\" in updated
@@ -1449,7 +1459,7 @@ def apply_runtime_patches(
             # Remove destructive DEBUG trap (replaced by PS0 reset)
             updated = _DEBUG_TRAP_RE.sub("", updated, count=1)
 
-            if "synth-shell-theme: v13_init" not in updated or "133;C\\e\\\\" in updated:
+            if "synth-shell-theme: v13_init" not in updated or "133;C\\e\\\\" in updated or "SSP_TERMINAL_SANITIZE" not in updated:
                 if _V11_INIT_AND_PC_RE.search(updated):
                     updated = _V11_INIT_AND_PC_RE.sub(lambda _: V12_INIT_AND_CHAINING, updated, count=1)
                 elif "\tPROMPT_COMMAND=prompt_command_hook" in updated:
@@ -1457,6 +1467,7 @@ def apply_runtime_patches(
 
             changes.append("v13_segments")
             changes.append("osc133_semantic")
+            changes.append("terminal_sanitize")
             changes.append("right_prompt")
             if "hook_chaining" not in changes:
                 changes.append("hook_chaining")

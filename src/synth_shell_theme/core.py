@@ -420,6 +420,7 @@ def read_current_state(
     right_format_str = ""
     right_fill_char = "─"
     enable_osc133 = True
+    enable_terminal_sanitize = True
     git_show_state = True
     battery_threshold = 100
     new_line = True
@@ -460,6 +461,8 @@ def read_current_state(
                 right_fill_char = val or " "
             elif key == "enable_osc133":
                 enable_osc133 = val.lower() in ("true", "1", "yes")
+            elif key == "enable_terminal_sanitize":
+                enable_terminal_sanitize = val.lower() in ("true", "1", "yes")
             elif key == "git_show_state":
                 git_show_state = val.lower() in ("true", "1", "yes")
             elif key == "battery_threshold" and val.isdigit():
@@ -538,6 +541,7 @@ def read_current_state(
         "right_format_segments": right_format_str.split() if right_format_str else [],
         "right_fill_char": right_fill_char,
         "enable_osc133": enable_osc133,
+        "enable_terminal_sanitize": enable_terminal_sanitize,
         "git_show_state": git_show_state,
         "battery_threshold": battery_threshold,
         "enable_command_on_new_line": new_line,
@@ -747,6 +751,7 @@ def apply_layout_options(
     right_format_str: str | None = None,
     right_fill_char: str | None = None,
     enable_osc133: bool | None = None,
+    enable_terminal_sanitize: bool | None = None,
     git_show_state: bool | None = None,
     battery_threshold: int | None = None,
     new_line: bool | None = None,
@@ -795,6 +800,8 @@ def apply_layout_options(
         updates["right_fill_char"] = right_fill_char[:1] if right_fill_char else " "
     if enable_osc133 is not None:
         updates["enable_osc133"] = "true" if enable_osc133 else "false"
+    if enable_terminal_sanitize is not None:
+        updates["enable_terminal_sanitize"] = "true" if enable_terminal_sanitize else "false"
     if git_show_state is not None:
         updates["git_show_state"] = "true" if git_show_state else "false"
     if battery_threshold is not None:
@@ -1106,6 +1113,7 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
         "right_format": state["right_format"],
         "right_fill_char": state["right_fill_char"],
         "enable_osc133": state["enable_osc133"],
+        "enable_terminal_sanitize": state["enable_terminal_sanitize"],
         "git_show_state": state["git_show_state"],
         "battery_threshold": state["battery_threshold"],
         "enable_command_on_new_line": state["enable_command_on_new_line"],
@@ -1172,6 +1180,7 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
         right_format_str=str(data["right_format"]) if "right_format" in data else None,
         right_fill_char=str(data["right_fill_char"]) if "right_fill_char" in data else None,
         enable_osc133=bool(data["enable_osc133"]) if "enable_osc133" in data else None,
+        enable_terminal_sanitize=bool(data["enable_terminal_sanitize"]) if "enable_terminal_sanitize" in data else None,
         git_show_state=bool(data["git_show_state"]) if "git_show_state" in data else None,
         battery_threshold=int(data["battery_threshold"]) if "battery_threshold" in data else None,
         new_line=bool(data["enable_command_on_new_line"]) if "enable_command_on_new_line" in data else None,
@@ -1380,7 +1389,7 @@ _synth_shell_theme_complete()
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
     local subcmds="tui web studio sep init doctor bench export import import-theme export-web completion"
-    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --right-format --right-fill --osc133 --no-osc133 --git-state --no-git-state --battery-threshold --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --sync-ecosystem --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
+    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --right-format --right-fill --osc133 --no-osc133 --terminal-sanitize --no-terminal-sanitize --git-state --no-git-state --battery-threshold --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --sync-ecosystem --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
     local themes="{theme_slugs}"
     local seps="{sep_keys}"
     local segs="{seg_tokens}"
@@ -1496,6 +1505,7 @@ def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Pat
             "right_format_segments": ["KUBE", "DURATION", "CLOCK"],
             "right_fill_char": "─",
             "enable_osc133": True,
+            "enable_terminal_sanitize": True,
             "git_show_state": True,
             "battery_threshold": 100,
             "enable_command_on_new_line": True,
@@ -1529,6 +1539,7 @@ def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Pat
                 "v12_segments": True,
                 "v13_segments": True,
                 "osc133_semantic": True,
+                "terminal_sanitize": True,
                 "right_prompt": True,
                 "responsive_width": True,
                 "hook_chaining": True,

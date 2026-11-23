@@ -929,7 +929,7 @@ fi
         fix_res = core.doctor_fix(config_dir=self.cfg_dir)
         self.assertIn("normalized_lf:synth-shell-prompt.sh", fix_res["actions"])
         self.assertNotIn(b"\r\n", prompt_sh.read_bytes())
-        for k in ("git_advanced_state", "v13_segments", "osc133_semantic", "right_prompt", "all_applied"):
+        for k in ("git_advanced_state", "v13_segments", "osc133_semantic", "terminal_sanitize", "right_prompt", "all_applied"):
             self.assertTrue(fix_res["patches"][k], msg=f"Expected {k}=True, got {fix_res['patches']}")
         self.assertEqual(patches.apply_runtime_patches(self.cfg_dir)["changes"], [])
 
@@ -972,7 +972,11 @@ fi
                     '[[ "$PS1" == *"133;A"* && "$PS1" == *"133;B"* && "$PS1" == *"133;D;"* ]] && echo "OSC133_OK"; '
                     r'''exp="${PS1@P}"; clean="${exp//$'\x1b]'/}"; [[ "$clean" != *']'* ]] && echo "NO_STRAY_BRACKET_OK"; '''
                     '[[ "$PS1" == *"───"* ]] && echo "RPROMPT_OK"; '
-                    '[[ "$PS0" == *"133;C"* ]] && echo "PS0_C_OK"'
+                    '[[ "$PS0" == *"133;C"* ]] && echo "PS0_C_OK"; '
+                    'SAN_OUT="$(SSP_FORCE_SANITIZE=1 prompt_command_hook)"; '
+                    '[[ "$SAN_OUT" == *"?1000l"* && "$SAN_OUT" == *"?1003l"* && "$SAN_OUT" == *"?1006l"* && "$SAN_OUT" == *"?1004l"* ]] && echo "SANITIZE_OK"; '
+                    'SAN_OFF="$(SSP_FORCE_SANITIZE=1 SSP_TERMINAL_SANITIZE=false prompt_command_hook)"; '
+                    '[[ -z "$SAN_OFF" ]] && echo "SANITIZE_OFF_OK"'
                 )
                 r_bash = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, check=False)
                 self.assertEqual(r_bash.returncode, 0, msg=r_bash.stderr)
@@ -982,6 +986,8 @@ fi
                 self.assertIn("NO_STRAY_BRACKET_OK", out)
                 self.assertIn("RPROMPT_OK", out)
                 self.assertIn("PS0_C_OK", out)
+                self.assertIn("SANITIZE_OK", out)
+                self.assertIn("SANITIZE_OFF_OK", out)
 
         # 5. Export static browser demo (GitHub Pages bundle)
         static_html = self.cfg_dir / "demo" / "index.html"
