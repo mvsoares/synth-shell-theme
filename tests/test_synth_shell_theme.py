@@ -21,7 +21,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from synth_shell_theme import cli, core, patches, paths, separators, server, themes  # noqa: E402
+from synth_shell_theme import cli, core, ecosystem, patches, paths, separators, server, themes  # noqa: E402
 
 MOCK_UPSTREAM_PROMPT_SH = """#!/usr/bin/env bash
 getColorCode()
@@ -326,7 +326,10 @@ class SynthShellThemeTests(unittest.TestCase):
         self.assertIn("Character Palette", buf_sep.getvalue())
 
     def test_v11_full_patches_and_bash_runtime_behavior(self) -> None:
-        full_prompt = MOCK_UPSTREAM_PROMPT_SH + """
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH.replace(
+            '    echo "$is_dirty"',
+            '    echo "${branch:-main}"',
+        ) + """
 getEffectCode()
 {
 \tcase $1 in
@@ -557,7 +560,7 @@ printMonitorRAM()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_b:
                 boot = json.loads(r_b.read().decode("utf-8"))
-                self.assertEqual(len(boot["valid_segments"]), 20)
+                self.assertEqual(len(boot["valid_segments"]), 21)
                 self.assertIn("diagnostics", boot)
                 self.assertIn("greeter", boot)
 
@@ -626,7 +629,10 @@ printMonitorRAM()
         self.assertIn("tokyo-night", comp_script)
 
         # 5. Full v1.2 runtime patches: TrueColor, hook_chaining (no DEBUG trap), v12 segments, nounset, bench
-        full_prompt = MOCK_UPSTREAM_PROMPT_SH + """
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH.replace(
+            '    echo "$is_dirty"',
+            '    echo "${branch:-main}"',
+        ) + """
 getEffectCode()
 {
 \tcase $1 in
@@ -759,6 +765,250 @@ fi
             )
             with urllib.request.urlopen(req_tog) as r_tog:
                 self.assertTrue(json.loads(r_tog.read().decode("utf-8"))["ok"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_v13_rprompt_osc133_git_state_ecosystem_import_doctor_fix_and_static_demo(self) -> None:
+        # 1. Ecosystem sync (fzf + LS_COLORS + tmux)
+        catalog = themes.load_themes(config_dir=self.cfg_dir)
+        tokyo, _ = themes.find_theme("tokyo-night", catalog)
+        assert tokyo is not None
+        core.apply_theme(tokyo, config_dir=self.cfg_dir)
+        eco_res = ecosystem.sync_ecosystem(config_dir=self.cfg_dir)
+        self.assertEqual(eco_res["theme"], "Tokyo Night")
+        env_sh = Path(eco_res["env_script"]).read_text(encoding="utf-8")
+        tmux_conf = Path(eco_res["tmux_conf"]).read_text(encoding="utf-8")
+        self.assertIn("FZF_DEFAULT_OPTS", env_sh)
+        self.assertIn("LS_COLORS", env_sh)
+        self.assertIn("status-style", tmux_conf)
+
+        # 2. Import external themes (Pywal, Base16 YAML, Ghostty, Kitty, Alacritty, Windows Terminal JSON)
+        imp_dir = self.cfg_dir / "external_palettes"
+        imp_dir.mkdir(exist_ok=True)
+
+        pywal_file = imp_dir / "colors.json"
+        pywal_file.write_text(
+            json.dumps({
+                "special": {"background": "#10121a", "foreground": "#d8dee9"},
+                "colors": {
+                    "color0": "#1b1e2b", "color1": "#f07178", "color2": "#c3e88d",
+                    "color3": "#ffcb6b", "color4": "#82aaff", "color5": "#c792ea",
+                    "color6": "#89ddff", "color7": "#d8dee9", "color8": "#676e95",
+                },
+            }),
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_pywal = ecosystem.import_external_theme(pywal_file, custom_name="Pywal Test", config_dir=self.cfg_dir, apply_now=False)
+        self.assertEqual(r_pywal["format"], "pywal")
+        self.assertEqual(r_pywal["slug"], "pywal-test")
+
+        b16_file = imp_dir / "nord.yaml"
+        b16_file.write_text(
+            'scheme: "Base16 Nord"\nbase00: "2E3440"\nbase01: "3B4252"\nbase02: "434C5E"\n'
+            'base03: "4C566A"\nbase05: "E5E9F0"\nbase08: "BF616A"\nbase0A: "EBCB8B"\n'
+            'base0B: "A3BE8C"\nbase0C: "88C0D0"\nbase0D: "81A1C1"\nbase0E: "B48EAD"\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_b16 = ecosystem.import_external_theme(b16_file, config_dir=self.cfg_dir, apply_now=False)
+        self.assertEqual(r_b16["format"], "base16")
+
+        ghostty_file = imp_dir / "ghostty.conf"
+        ghostty_file.write_text(
+            "background = #1e1e2e\nforeground = #cdd6f4\n"
+            "palette = 0=#45475a\npalette = 1=#f38ba8\npalette = 2=#a6e3a1\n"
+            "palette = 3=#f9e2af\npalette = 4=#89b4fa\npalette = 5=#cba6f7\npalette = 6=#94e2d5\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_gh = ecosystem.import_external_theme(ghostty_file, custom_name="Ghostty Mocha", config_dir=self.cfg_dir, apply_now=False)
+        self.assertEqual(r_gh["format"], "terminal-conf")
+
+        kitty_file = imp_dir / "kitty.conf"
+        kitty_file.write_text(
+            "background #282a36\nforeground #f8f8f2\n"
+            "color0 #21222c\ncolor1 #ff5555\ncolor2 #50fa7b\ncolor3 #f1fa8c\n"
+            "color4 #bd93f9\ncolor5 #ff79c6\ncolor6 #8be9fd\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_ki = ecosystem.import_external_theme(kitty_file, custom_name="Kitty Drac", config_dir=self.cfg_dir, apply_now=False)
+        self.assertEqual(r_ki["format"], "terminal-conf")
+
+        alac_file = imp_dir / "alacritty.toml"
+        alac_file.write_text(
+            '[colors.primary]\nbackground = "#1a1b26"\nforeground = "#c0caf5"\n'
+            '[colors.normal]\nblack = "#15161e"\nred = "#f7768e"\ngreen = "#9ece6a"\n'
+            'yellow = "#e0af68"\nblue = "#7aa2f7"\nmagenta = "#bb9af7"\ncyan = "#7dcfff"\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_al = ecosystem.import_external_theme(alac_file, custom_name="Alacritty TN", config_dir=self.cfg_dir, apply_now=False)
+        self.assertEqual(r_al["format"], "terminal-conf")
+
+        wt_file = imp_dir / "wt.json"
+        wt_file.write_text(
+            json.dumps({
+                "name": "WT OneHalf",
+                "background": "#282c34", "foreground": "#dcdfe4",
+                "black": "#282c34", "red": "#e06c75", "green": "#98c379",
+                "yellow": "#e5c07b", "blue": "#61afef", "purple": "#c678dd", "cyan": "#56b6c2",
+            }),
+            encoding="utf-8",
+            newline="\n",
+        )
+        r_wt = ecosystem.import_external_theme(wt_file, config_dir=self.cfg_dir, apply_now=True)
+        self.assertEqual(r_wt["format"], "windows-terminal")
+        self.assertEqual(core.read_current_state(config_dir=self.cfg_dir)["active_theme"], "WT OneHalf")
+
+        # 3. Layout v1.3 options (RPROMPT, OSC 133, Git state, Battery)
+        core.apply_layout_options(
+            format_str="HOST PWD GIT",
+            right_format_str="CLOCK BATTERY DURATION",
+            right_fill_char="─",
+            enable_osc133=True,
+            git_show_state=True,
+            battery_threshold=90,
+            new_line=True,
+            config_dir=self.cfg_dir,
+        )
+        st_cfg = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertEqual(st_cfg["right_format"], "CLOCK BATTERY DURATION")
+        self.assertEqual(st_cfg["right_fill_char"], "─")
+        self.assertTrue(st_cfg["enable_osc133"])
+        self.assertTrue(st_cfg["git_show_state"])
+        self.assertEqual(st_cfg["battery_threshold"], 90)
+
+        # 4. Runtime patches v1.3 + real Bash verification (OSC 133, RPROMPT, Git rebase/worktree, doctor --fix CRLF)
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH.replace(
+            '    echo "$is_dirty"',
+            '    echo "${branch:-main}"',
+        ) + """
+getEffectCode() { echo 0; }
+getPyenv() { echo ""; }
+getTerraform() { echo ""; }
+shortenPath() { echo "$1"; }
+get_colors_for_element() { echo "white blue bold"; }
+prompt_command_hook() { PS1="$USER"; }
+synth_shell_prompt()
+{
+\tformat="HOST PWD GIT"
+\tSSP_ELEMENTS=($format "INPUT")
+\tSSP_COLORS_USER=(white blue bold)
+\tSSP_COLORS_HOST=(white 237 bold)
+\tSSP_COLORS_PWD=(black 255 bold)
+\tSSP_COLORS_GIT=(black 71 bold)
+\tSSP_COLORS_PYENV=(white 63 bold)
+\tSSP_COLORS_KUBE=(black 135 bold)
+\tSSP_COLORS_TF=(black 228 bold)
+\tSSP_COLORS_CLOCK=(white 240 bold)
+\tSSP_COLORS_INPUT=(white none bold)
+\tSSP_VERTICAL_PADDING=""
+\tSSP_NEW_LINE_LINK_TOP="┌"
+\tSSP_NEW_LINE_LINK_BOTTOM="└"
+\tSSP_PROMPT_COMM_SEP=""
+\tSSP_BASH_SYMBOL=""
+\tSSP_MAX_PWD_CHAR=35
+\tSSP_PWD_TRUNC_SYMBOL="…"
+\tSSP_CLOCK_FORMAT="%H:%M"
+\tnone="$(tput sgr0)"
+\ttrap 'echo -ne "${none}"' DEBUG
+\tPROMPT_COMMAND=prompt_command_hook
+}
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+\texit
+elif [ -n "$( echo $- | grep i )" ]; then
+\tsynth_shell_prompt
+fi
+"""
+        prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
+        # Inject CRLF intentionally to verify `doctor --fix` normalizes it and applies patches
+        prompt_sh.write_bytes(full_prompt.replace("\n", "\r\n").encode("utf-8"))
+        fix_res = core.doctor_fix(config_dir=self.cfg_dir)
+        self.assertIn("normalized_lf:synth-shell-prompt.sh", fix_res["actions"])
+        self.assertNotIn(b"\r\n", prompt_sh.read_bytes())
+        for k in ("git_advanced_state", "v13_segments", "osc133_semantic", "right_prompt", "all_applied"):
+            self.assertTrue(fix_res["patches"][k], msg=f"Expected {k}=True, got {fix_res['patches']}")
+        self.assertEqual(patches.apply_runtime_patches(self.cfg_dir)["changes"], [])
+
+        if shutil.which("bash"):
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                chk_sh = subprocess.run(["bash", "-n", str(prompt_sh)], capture_output=True, text=True, check=False)
+                self.assertEqual(chk_sh.returncode, 0, msg=chk_sh.stderr)
+                chk_env = subprocess.run(["bash", "-n", eco_res["env_script"]], capture_output=True, text=True, check=False)
+                self.assertEqual(chk_env.returncode, 0, msg=chk_env.stderr)
+
+                stripped = "\n".join(
+                    ln for ln in prompt_sh.read_text(encoding="utf-8").splitlines()
+                    if "interactive_guard" not in ln
+                ).replace('elif [ -n "$( echo $- | grep i )" ]; then', "elif true; then")
+                runner = self.cfg_dir / "v13_runner.sh"
+                runner.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+
+                # Mock git repo with rebase-merge to verify pure-Bash state detection
+                repo = self.cfg_dir / "fake_git_repo"
+                repo.mkdir(exist_ok=True)
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+                subprocess.run(["git", "config", "user.email", "t@t.dev"], cwd=repo, check=True)
+                subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+                (repo / "a.txt").write_text("hi\n", encoding="utf-8", newline="\n")
+                subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+                subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+                rebase_dir = repo / ".git" / "rebase-merge"
+                rebase_dir.mkdir(exist_ok=True)
+                (rebase_dir / "msgnum").write_text("2\n", encoding="utf-8", newline="\n")
+                (rebase_dir / "end").write_text("5\n", encoding="utf-8", newline="\n")
+
+                cmd = (
+                    f'source "{runner}"; '
+                    'SSP_ENABLE_OSC133="true"; SSP_RIGHT_ELEMENTS=(CLOCK); SSP_RIGHT_FILL_CHAR="─"; '
+                    'SSP_PROMPT_COMM_SEP=$\'\\n\'; SSP_NEW_LINE_LINK_TOP="┌"; SSP_NEW_LINE_LINK_BOTTOM="└"; COLUMNS=100; '
+                    f'cd "{repo}"; '
+                    'GS="$(getGitBranch)"; echo "GIT=$GS"; '
+                    'prompt_command_hook; prompt_command_hook; '
+                    '[[ "$PS1" == *"133;A"* && "$PS1" == *"133;B"* && "$PS1" == *"133;D;"* ]] && echo "OSC133_OK"; '
+                    '[[ "$PS1" == *"───"* ]] && echo "RPROMPT_OK"; '
+                    '[[ "$PS0" == *"133;C"* ]] && echo "PS0_C_OK"'
+                )
+                r_bash = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, check=False)
+                self.assertEqual(r_bash.returncode, 0, msg=r_bash.stderr)
+                out = r_bash.stdout
+                self.assertIn("REBASE 2/5", out)
+                self.assertIn("OSC133_OK", out)
+                self.assertIn("RPROMPT_OK", out)
+                self.assertIn("PS0_C_OK", out)
+
+        # 5. Export static browser demo (GitHub Pages bundle)
+        static_html = self.cfg_dir / "demo" / "index.html"
+        exp_path = core.export_static_studio(static_html, config_dir=self.cfg_dir)
+        self.assertEqual(exp_path, static_html)
+        html_content = static_html.read_text(encoding="utf-8")
+        self.assertIn("window.__SYNTH_STATIC_BOOTSTRAP__", html_content)
+        self.assertIn("Tokyo Night", html_content)
+
+        # 6. Web Studio HTTP `/api/sync-ecosystem` + 21 valid segments
+        httpd = server.create_studio_server("127.0.0.1", 0, config_dir=self.cfg_dir)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_boot:
+                boot = json.loads(r_boot.read().decode("utf-8"))
+                self.assertEqual(len(boot["valid_segments"]), 21)
+                self.assertIn("BATTERY", boot["valid_segments"])
+
+            req_eco = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/sync-ecosystem",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_eco) as r_eco:
+                body_eco = json.loads(r_eco.read().decode("utf-8"))
+                self.assertTrue(body_eco["ok"])
         finally:
             httpd.shutdown()
             httpd.server_close()

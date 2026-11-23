@@ -135,3 +135,16 @@ All 16 community enhancements across Phases 1–5 have been implemented in **`v1
 24. **[x] Custom TrueColor Theme Creator in Web Studio (`~/.config/synth-shell/themes/`)** — Pick `#RRGGBB` colors per segment, save custom `.conf` themes, and browse them alongside the 64 bundled palettes.
 25. **[x] 1-Click Light / Dark Theme Toggle (`--toggle-theme`, `--light-theme`, `--dark-theme`)** — Instant day/night switching in CLI and Web Studio.
 26. **[x] Bash Tab-Completion (`synth-shell-theme completion bash`) & VS Code / `TERM` / `COLORTERM` Diagnostics in `doctor`**.
+
+---
+
+## Implemented in `v1.3.0` (Modern Terminals, Unified Color Ecosystem & Interactive Studio) ✅
+
+27. **[x] Right-Aligned Top Prompt Bar (`RPROMPT` — `--right-format`, `--right-fill`)** — Pure-Bash right-aligned top prompt segments (e.g. `CLOCK BATTERY DURATION`) with customizable connecting fill bar (`─`, `·`, ` `) and automatic column-width calculation in 2-line mode.
+28. **[x] OSC 133 Semantic Prompt Integration (`--osc133` / `osc133_semantic`)** — Native `OSC 133;A/B/C/D;<exit>` sequences for Ghostty, Kitty, WezTerm, Windows Terminal, iTerm2, and VS Code (jump between prompts, select command output, visual command markers).
+29. **[x] Advanced Git State & Worktree Detection (`git_advanced_state`)** — Zero-fork pure-Bash `.git` inspection showing `REBASE 2/5`, `MERGE`, `CHERRY`, `BISECT`, and `git worktree` badges (`⎇name`).
+30. **[x] Zero-Fork `BATTERY` Segment (`v13_segments`)** — Pure-Bash `/sys/class/power_supply/BAT*/capacity` & `status` reader (with `--battery-threshold` auto-hide when charged).
+31. **[x] Unified Color Ecosystem (`--sync-ecosystem`)** — Generates matching `~/.config/synth-shell/theme-env.sh` (`FZF_DEFAULT_OPTS` + `LS_COLORS`) and `~/.config/synth-shell/tmux-theme.conf` from the active prompt theme.
+32. **[x] External Theme Importer (`import-theme`)** — Direct 1-command import from **Pywal** (`--pywal`), **Base16 YAML**, **Ghostty**, **Kitty**, **Alacritty**, and **Windows Terminal JSON** palettes into `~/.config/synth-shell/themes/`.
+33. **[x] Interactive Drag-and-Drop Segments, Inline Color Editor & Shareable CLI in Web Studio** — Drag pills to reorder Left & Right prompt bars, click any Live Workbench segment to tweak its FG/BG hex inline, and copy a reproducible 1-line CLI command.
+34. **[x] Static Browser Demo Export (`export-web docs/index.html`) & Auto-Healing `doctor --fix`** — Zero-backend static HTML showcase ready for GitHub Pages, plus 1-command CRLF→LF repair and patch auto-remediation (`synth-shell-theme doctor --fix`).

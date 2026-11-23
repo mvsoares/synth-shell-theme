@@ -28,6 +28,7 @@ from synth_shell_theme.core import (
     sync_root_config,
     toggle_light_dark_theme,
 )
+from synth_shell_theme.ecosystem import sync_ecosystem
 from synth_shell_theme.patches import apply_runtime_patches
 from synth_shell_theme.paths import (
     detect_nerd_fonts,
@@ -124,6 +125,11 @@ def handle_apply_payload(
 
     layout_keys = (
         "format",
+        "right_format",
+        "right_fill_char",
+        "enable_osc133",
+        "git_show_state",
+        "battery_threshold",
         "enable_command_on_new_line",
         "enable_vertical_padding",
         "max_pwd_char",
@@ -152,8 +158,21 @@ def handle_apply_payload(
         else:
             fmt_str = None
 
+        rfmt_raw = payload.get("right_format")
+        if isinstance(rfmt_raw, list):
+            rfmt_str: str | None = " ".join(str(x) for x in rfmt_raw)
+        elif isinstance(rfmt_raw, str):
+            rfmt_str = rfmt_raw
+        else:
+            rfmt_str = None
+
         apply_layout_options(
             format_str=fmt_str,
+            right_format_str=rfmt_str,
+            right_fill_char=str(payload["right_fill_char"]) if "right_fill_char" in payload else None,
+            enable_osc133=bool(payload["enable_osc133"]) if "enable_osc133" in payload else None,
+            git_show_state=bool(payload["git_show_state"]) if "git_show_state" in payload else None,
+            battery_threshold=int(payload["battery_threshold"]) if "battery_threshold" in payload else None,  # type: ignore[arg-type]
             new_line=bool(payload["enable_command_on_new_line"]) if "enable_command_on_new_line" in payload else None,
             vertical_padding=bool(payload["enable_vertical_padding"]) if "enable_vertical_padding" in payload else None,
             max_pwd_char=int(payload["max_pwd_char"]) if "max_pwd_char" in payload else None,  # type: ignore[arg-type]
@@ -367,6 +386,17 @@ def create_studio_server(
                 if route == "/api/bench":
                     runs = int(body.get("iterations", 12))  # type: ignore[arg-type]
                     self._send_json(benchmark_prompt(iterations=runs, config_dir=config_dir))
+                    return
+                if route == "/api/sync-ecosystem":
+                    res_e = sync_ecosystem(config_dir=config_dir)
+                    themes = load_themes(config_dir=config_dir)
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_e,
+                            "state": read_current_state(themes, config_dir),
+                        }
+                    )
                     return
                 if route == "/api/restore":
                     target = body.get("target", 1)

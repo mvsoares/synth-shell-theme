@@ -577,11 +577,15 @@
       </div>
       <div class="top-actions">
         <button id="btn-toggle-theme" title="Toggle between Light and Dark theme pair">☀ / ☾ Light·Dark</button>
+        <button id="btn-copy-cli" title="Copy reproducible CLI command for this setup">Share / Copy CLI</button>
         <button id="btn-copy-reload" title="Copy Bash reload command">Copy Reload Cmd</button>
         <button id="btn-undo" title="Restore latest configuration backup">Undo / Restore</button>
         <button class="primary" id="btn-apply-active">Apply Studio Selection</button>
       </div>
     </header>
+    <div id="static-demo-banner" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:12px;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.35);font-size:13px;color:var(--text);">
+      <strong>Live Browser Demo:</strong> Preview all 64 themes, 48 dual separators, and right-aligned layouts right here — click <strong>Share / Copy CLI</strong> to apply locally after <code>pipx install synth-shell-theme</code>.
+    </div>
 
     <!-- Sticky Live Prompt Workbench -->
     <section class="workbench" aria-label="Live Prompt Workbench">
@@ -604,6 +608,13 @@
         </div>
       </div>
       <div class="terminal-screen" id="live-workbench-screen"></div>
+      <div id="seg-quick-editor" style="display:none;margin-top:10px;padding:9px 12px;border-radius:10px;background:#0c1018;border:1px solid var(--border);align-items:center;gap:12px;flex-wrap:wrap;font-size:12.5px;">
+        <strong>Editing <code id="qe-seg-name">host</code>:</strong>
+        <label class="toggle-label"><span>BG</span><input type="color" id="qe-bg" /></label>
+        <label class="toggle-label"><span>FG</span><input type="color" id="qe-fg" /></label>
+        <button class="sm primary" id="qe-save-custom">Save as Custom Theme</button>
+        <button class="sm" id="qe-close">Close</button>
+      </div>
     </section>
 
     <!-- Tabs -->
@@ -668,8 +679,25 @@
       <div class="settings-grid">
         <div class="panel-box">
           <h3>Active Prompt Segments &amp; Layout</h3>
-          <p>Toggle core &amp; v1.1 telemetry/cloud segments in <code>format="..."</code>, prefix icon, text style, and truncation.</p>
+          <p>Click pills to toggle, or <strong>drag &amp; drop</strong> active pills to reorder Left &amp; Right bars. Click any segment in the Live Workbench above to tweak its color.</p>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Left Bar (<code>format</code>) — drag active pills to reorder:</div>
           <div class="seg-toggles" id="segment-toggles"></div>
+          <div style="font-size:12px;color:var(--muted);margin:10px 0 6px;">Right Bar (<code>right_format</code>, 2-line top bar) — drag active pills to reorder:</div>
+          <div class="seg-toggles" id="right-segment-toggles"></div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 12px;">
+            <label class="toggle-label">
+              <span>Fill Char:</span>
+              <input type="text" id="inp-right-fill" value="─" maxlength="1" style="min-width:46px;width:46px;padding:4px 8px;text-align:center;" />
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-osc133" checked />
+              <span>OSC 133 semantic markers (Ghostty/Kitty/WT/VS Code)</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-git-state" checked />
+              <span>Git rebase/merge/worktree state</span>
+            </label>
+          </div>
           <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0;">
             <label class="toggle-label">
               <input type="checkbox" id="chk-two-line" checked />
@@ -774,10 +802,13 @@
     <section class="tab-panel" id="tab-sync">
       <div class="settings-grid">
         <div class="panel-box">
-          <h3>Root Prompt Theme Sync</h3>
-          <p>Generate <code>synth-shell-prompt.root.config</code> matching your active theme with a high-visibility red root accent on <code>USER</code> &amp; <code>HOST</code>.</p>
+          <h3>Root Prompt &amp; Ecosystem Color Sync</h3>
+          <p>Sync your active theme to <code>synth-shell-prompt.root.config</code>, plus generate <code>theme-env.sh</code> (<code>FZF_DEFAULT_OPTS</code> + <code>LS_COLORS</code>) &amp; <code>tmux-theme.conf</code>.</p>
           <div id="root-sync-status" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></div>
-          <button class="primary" id="btn-sync-root">Sync Active Theme to Root Config</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="primary" id="btn-sync-root">Sync Active Theme to Root Config</button>
+            <button id="btn-sync-ecosystem">Sync Ecosystem (fzf + LS_COLORS + tmux)</button>
+          </div>
         </div>
 
         <div class="panel-box">
@@ -815,6 +846,13 @@
       internalSep: { glyph: "\uE0B4", code: "\\uE0B4" },
       endSep: { glyph: "\uE0B0", code: "\\uE0B0" },
       formatSegments: ["HOST", "PWD", "GIT", "PYENV", "TF", "KUBE"],
+      rightSegments: [],
+      rightFillChar: "─",
+      enableOsc133: true,
+      gitShowState: true,
+      batteryThreshold: 100,
+      staticDemo: false,
+      editingSegKey: null,
       twoLine: true,
       verticalPadding: true,
       maxPwdChar: 35,
@@ -862,7 +900,8 @@
       direnv: "⚡ app",
       shlvl: "↳ L2",
       rust: "🦀 1.82",
-      go: "🐹 1.23"
+      go: "🐹 1.23",
+      battery: "🔋 86%"
     };
 
     function escapeHtml(str) {
@@ -885,7 +924,7 @@
       return state.themes.find(t => t.id === state.selectedThemeId) || state.themes[0];
     }
 
-    function renderPromptHtml(theme, segPairs, cmdText) {
+    function renderPromptHtml(theme, segPairs, cmdText, rightPairs = []) {
       if (!theme) return "";
       const intGlyph = escapeHtml(state.internalSep.glyph || "\uE0B4");
       const endGlyph = escapeHtml(state.endSep.glyph || intGlyph);
@@ -907,26 +946,39 @@
             ? "font-weight:400;opacity:0.78;"
             : "font-weight:700;";
 
-      html += `<span class="prompt-strip">`;
-      segPairs.forEach(([segKey, label], idx) => {
-        const segColor = theme.segments[segKey] || { fg: "#ffffff", bg: "#333333" };
-        const fg = state.forceWhite ? "#ffffff" : (segColor.fg || "#ffffff");
-        const bg = segColor.bg || "#222222";
-        html += `<span class="seg" style="background:${bg};color:${fg};${effStyle}">${escapeHtml(label)}</span>`;
+      const buildStrip = (pairs) => {
+        let s = `<span class="prompt-strip">`;
+        pairs.forEach(([segKey, label], idx) => {
+          const segColor = theme.segments[segKey] || { fg: "#ffffff", bg: "#333333" };
+          const fg = state.forceWhite ? "#ffffff" : (segColor.fg || "#ffffff");
+          const bg = segColor.bg || "#222222";
+          s += `<span class="seg" data-segkey="${escapeHtml(segKey)}" title="Click to edit ${escapeHtml(segKey)} colors" style="cursor:pointer;background:${bg};color:${fg};${effStyle}">${escapeHtml(label)}</span>`;
+          if (idx + 1 < pairs.length) {
+            const nextKey = pairs[idx + 1][0];
+            const nextBg = (theme.segments[nextKey] && theme.segments[nextKey].bg) || "#222222";
+            s += `<span class="sep-glyph" style="background:${nextBg};color:${bg};">${intGlyph}</span>`;
+          } else {
+            s += `<span class="sep-glyph" style="background:transparent;color:${bg};">${endGlyph}</span>`;
+          }
+        });
+        s += `</span>`;
+        return s;
+      };
 
-        if (idx + 1 < segPairs.length) {
-          const nextKey = segPairs[idx + 1][0];
-          const nextBg = (theme.segments[nextKey] && theme.segments[nextKey].bg) || "#222222";
-          html += `<span class="sep-glyph" style="background:${nextBg};color:${bg};">${intGlyph}</span>`;
-        } else {
-          html += `<span class="sep-glyph" style="background:transparent;color:${bg};">${endGlyph}</span>`;
-        }
-      });
-      html += `</span>`;
+      if (state.twoLine && rightPairs.length) {
+        const fch = escapeHtml(state.rightFillChar || "─");
+        html = `<div style="display:flex;align-items:center;gap:6px;">`
+          + `<span>${html}${buildStrip(segPairs)}</span>`
+          + `<span style="flex:1;overflow:hidden;color:#3a455e;letter-spacing:0;user-select:none;">${fch.repeat(80)}</span>`
+          + `<span>${buildStrip(rightPairs)}</span>`
+          + `</div>`;
+      } else {
+        html += buildStrip(segPairs);
+      }
 
       const inputFg = (theme.segments.input && theme.segments.input.fg) || "#ffffff";
       if (state.twoLine) {
-        html += `<br/><span class="newline-connector">└─</span> <span style="color:${inputFg};font-weight:700;">$ ${escapeHtml(cmdText)}</span>`;
+        html += `${rightPairs.length ? "" : "<br/>"}<span class="newline-connector">└─</span> <span style="color:${inputFg};font-weight:700;">$ ${escapeHtml(cmdText)}</span>`;
       } else {
         html += `<span class="cmd-text" style="color:${inputFg};">${escapeHtml(cmdText)}</span>`;
       }
@@ -939,10 +991,15 @@
       document.getElementById("wb-theme-name").textContent = `#${String(theme.id).padStart(2, "0")} ${theme.name}`;
       document.getElementById("wb-int-sep").textContent = `${state.internalSep.glyph} (${state.internalSep.code})`;
       document.getElementById("wb-end-sep").textContent = `${state.endSep.glyph} (${state.endSep.code})`;
-      document.getElementById("wb-format").textContent = state.formatSegments.join(" ");
+      document.getElementById("wb-format").textContent = state.formatSegments.join(" ")
+        + (state.rightSegments.length ? `  │  R: ${state.rightSegments.join(" ")}` : "");
 
-      const shortPairs = [["host", "dev-box"], ["pwd", "~/workspace/app"], ["git", "main"]];
+      const shortPairs = [["host", "dev-box"], ["pwd", "~/workspace/app"], ["git", "main ↑2"]];
       const activePairs = state.formatSegments.map(tok => {
+        const k = tok.toLowerCase();
+        return [k, SAMPLE_VALUES[k] || tok];
+      });
+      const rightPairs = state.rightSegments.map(tok => {
         const k = tok.toLowerCase();
         return [k, SAMPLE_VALUES[k] || tok];
       });
@@ -950,8 +1007,37 @@
       const screen = document.getElementById("live-workbench-screen");
       screen.innerHTML = `
         <div class="term-row">${renderPromptHtml(theme, shortPairs, "git status")}</div>
-        <div class="term-row">${renderPromptHtml(theme, activePairs, "kubectl get pods -n prod")}</div>
+        <div class="term-row">${renderPromptHtml(theme, activePairs, "kubectl get pods -n prod", rightPairs)}</div>
       `;
+      screen.querySelectorAll(".seg[data-segkey]").forEach(el => {
+        el.addEventListener("click", () => openQuickSegEditor(el.dataset.segkey));
+      });
+    }
+
+    function openQuickSegEditor(segKey) {
+      const theme = getSelectedTheme();
+      if (!theme || !theme.segments[segKey]) return;
+      state.editingSegKey = segKey;
+      document.getElementById("qe-seg-name").textContent = segKey;
+      document.getElementById("qe-bg").value = theme.segments[segKey].bg || "#3b4261";
+      document.getElementById("qe-fg").value = theme.segments[segKey].fg || "#ffffff";
+      document.getElementById("seg-quick-editor").style.display = "flex";
+    }
+
+    function buildCliShareCommand() {
+      const theme = getSelectedTheme();
+      const parts = ["synth-shell-theme"];
+      if (theme && theme.slug) parts.push(`--apply ${theme.slug}`);
+      if (state.internalSep && state.endSep) {
+        parts.push(`--dual ${state.internalSep.key || state.internalSep.code} ${state.endSep.key || state.endSep.code}`);
+      }
+      if (state.formatSegments.length) parts.push(`--format "${state.formatSegments.join(" ")}"`);
+      if (state.rightSegments.length) parts.push(`--right-format "${state.rightSegments.join(" ")}"`);
+      parts.push(state.twoLine ? "--two-line" : "--single-line");
+      if (state.promptPrefix) parts.push(`--prefix "${state.promptPrefix}"`);
+      if (state.fontEffect && state.fontEffect !== "bold") parts.push(`--text-effect ${state.fontEffect}`);
+      if (state.forceWhite) parts.push("--force-white-text");
+      return parts.join(" ");
     }
 
     function renderBadges() {
@@ -1094,27 +1180,51 @@
       });
     }
 
-    function renderLayoutTab() {
-      const segRoot = document.getElementById("segment-toggles");
-      segRoot.innerHTML = state.validSegments.map(seg => {
-        const on = state.formatSegments.includes(seg);
-        return `<button class="seg-pill ${on ? "enabled" : ""}" data-seg="${seg}">${seg}</button>`;
+    function _renderDraggablePills(containerId, listKey, allowEmpty) {
+      const root = document.getElementById(containerId);
+      const activeList = state[listKey];
+      const inactive = state.validSegments.filter(s => !activeList.includes(s));
+      const ordered = [...activeList, ...inactive];
+      root.innerHTML = ordered.map(seg => {
+        const on = activeList.includes(seg);
+        return `<button class="seg-pill ${on ? "enabled" : ""}" data-seg="${seg}" draggable="${on ? "true" : "false"}">${on ? "⋮⋮ " : ""}${seg}</button>`;
       }).join("");
 
-      segRoot.querySelectorAll(".seg-pill").forEach(btn => {
+      let dragSeg = null;
+      root.querySelectorAll(".seg-pill").forEach(btn => {
+        const seg = btn.dataset.seg;
         btn.addEventListener("click", () => {
-          const seg = btn.dataset.seg;
-          if (state.formatSegments.includes(seg)) {
-            if (state.formatSegments.length > 1) {
-              state.formatSegments = state.formatSegments.filter(x => x !== seg);
+          if (state[listKey].includes(seg)) {
+            if (allowEmpty || state[listKey].length > 1) {
+              state[listKey] = state[listKey].filter(x => x !== seg);
             }
           } else {
-            state.formatSegments.push(seg);
+            state[listKey].push(seg);
           }
           renderLayoutTab();
           renderWorkbench();
         });
+        btn.addEventListener("dragstart", () => { dragSeg = seg; });
+        btn.addEventListener("dragover", e => { if (dragSeg && state[listKey].includes(seg)) e.preventDefault(); });
+        btn.addEventListener("drop", e => {
+          e.preventDefault();
+          if (!dragSeg || dragSeg === seg || !state[listKey].includes(seg)) return;
+          const arr = state[listKey].filter(x => x !== dragSeg);
+          const idx = arr.indexOf(seg);
+          arr.splice(idx, 0, dragSeg);
+          state[listKey] = arr;
+          renderLayoutTab();
+          renderWorkbench();
+        });
       });
+    }
+
+    function renderLayoutTab() {
+      _renderDraggablePills("segment-toggles", "formatSegments", false);
+      _renderDraggablePills("right-segment-toggles", "rightSegments", true);
+      document.getElementById("inp-right-fill").value = state.rightFillChar || "─";
+      document.getElementById("chk-osc133").checked = state.enableOsc133;
+      document.getElementById("chk-git-state").checked = state.gitShowState;
 
       document.getElementById("chk-two-line").checked = state.twoLine;
       document.getElementById("chk-vert-pad").checked = state.verticalPadding;
@@ -1143,12 +1253,16 @@
         ["git_single_pass", "Single-pass git status check (4x faster prompt)"],
         ["git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"],
         ["git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M)"],
+        ["git_advanced_state", "Git rebase/merge/cherry-pick/bisect & worktree state"],
         ["zero_fork_render", "Zero-fork pure-Bash segment renderer (~20 fewer subshells)"],
         ["dual_separator", "Independent ending separator (separator_char_end)"],
         ["color_256_parity", "Full 256-color & named-color parity + italic/regular effects"],
         ["truecolor_24bit", "24-bit TrueColor (#RRGGBB) with 256-color fallback"],
         ["v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH)"],
         ["v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"],
+        ["v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT + OSC 133"],
+        ["osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"],
+        ["right_prompt", "Right-aligned top bar (right_format + connector line)"],
         ["responsive_width", "Responsive compact prompt on narrow tmux/VS Code splits"],
         ["hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (no DEBUG trap conflict)"],
         ["pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"],
@@ -1248,6 +1362,13 @@
       if (Array.isArray(srvState.format_segments) && srvState.format_segments.length) {
         state.formatSegments = srvState.format_segments;
       }
+      if (Array.isArray(srvState.right_format_segments)) {
+        state.rightSegments = srvState.right_format_segments;
+      }
+      state.rightFillChar = String(srvState.right_fill_char || "─");
+      state.enableOsc133 = srvState.enable_osc133 !== false;
+      state.gitShowState = srvState.git_show_state !== false;
+      state.batteryThreshold = Number(srvState.battery_threshold || 100);
       state.twoLine = Boolean(srvState.enable_command_on_new_line);
       state.verticalPadding = Boolean(srvState.enable_vertical_padding);
       state.maxPwdChar = Number(srvState.max_pwd_char || 35);
@@ -1277,6 +1398,18 @@
     }
 
     async function applyChanges(payload) {
+      if (state.staticDemo) {
+        if (payload.theme) {
+          const found = state.themes.find(t => t.id === Number(payload.theme) || t.slug === payload.theme);
+          if (found) { state.selectedThemeId = found.id; state.activeThemeId = found.id; }
+        }
+        renderWorkbench();
+        renderThemeGrid();
+        const cmd = buildCliShareCommand();
+        try { await navigator.clipboard.writeText(cmd); } catch {}
+        showToast(`Static Demo: copied CLI command → ${cmd}`);
+        return;
+      }
       const resp = await fetch("/api/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1292,6 +1425,7 @@
     }
 
     async function restoreBackup(target = 1) {
+      if (state.staticDemo) { showToast("Static Demo: backups require local `synth-shell-theme web`."); return; }
       const resp = await fetch("/api/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1307,8 +1441,15 @@
     }
 
     async function initStudio() {
-      const resp = await fetch("/api/bootstrap");
-      const boot = await resp.json();
+      let boot;
+      if (window.__SYNTH_STATIC_BOOTSTRAP__) {
+        boot = window.__SYNTH_STATIC_BOOTSTRAP__;
+        state.staticDemo = true;
+        document.getElementById("static-demo-banner").style.display = "block";
+      } else {
+        const resp = await fetch("/api/bootstrap");
+        boot = await resp.json();
+      }
       document.getElementById("version-badge").textContent = `Studio v${boot.version}`;
       state.themes = boot.themes || [];
       state.separators = boot.separators || { categories: [], palette: [] };
@@ -1355,6 +1496,71 @@
         enable_vertical_padding: state.verticalPadding,
         max_pwd_char: state.maxPwdChar
       });
+    });
+
+    document.getElementById("btn-copy-cli").addEventListener("click", async () => {
+      const cmd = buildCliShareCommand();
+      try {
+        await navigator.clipboard.writeText(cmd);
+        showToast(`Copied CLI: ${cmd}`);
+      } catch {
+        showToast(cmd);
+      }
+    });
+
+    document.getElementById("qe-bg").addEventListener("input", e => {
+      const theme = getSelectedTheme();
+      if (theme && state.editingSegKey && theme.segments[state.editingSegKey]) {
+        theme.segments[state.editingSegKey].bg = e.target.value;
+        renderWorkbench();
+      }
+    });
+    document.getElementById("qe-fg").addEventListener("input", e => {
+      const theme = getSelectedTheme();
+      if (theme && state.editingSegKey && theme.segments[state.editingSegKey]) {
+        theme.segments[state.editingSegKey].fg = e.target.value;
+        renderWorkbench();
+      }
+    });
+    document.getElementById("qe-close").addEventListener("click", () => {
+      document.getElementById("seg-quick-editor").style.display = "none";
+      state.editingSegKey = null;
+    });
+    document.getElementById("qe-save-custom").addEventListener("click", async () => {
+      const theme = getSelectedTheme();
+      if (!theme) return;
+      if (state.staticDemo) { showToast("Static Demo: custom theme saving requires local `synth-shell-theme web`."); return; }
+      const colors = {};
+      Object.entries(theme.segments).forEach(([k, v]) => {
+        if (v && v.fg) colors[`font_color_${k}`] = v.fg;
+        if (v && v.bg) colors[`background_${k}`] = v.bg;
+      });
+      const resp = await fetch("/api/custom-theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `${theme.name} Remix`, colors, apply: true })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        if (Array.isArray(data.themes)) state.themes = data.themes;
+        renderBadges();
+        syncFromServerState(data.state, data.backups);
+        showToast(`Saved custom remix: ${data.saved_theme}`);
+      }
+    });
+
+    document.getElementById("inp-right-fill").addEventListener("input", e => {
+      state.rightFillChar = e.target.value || " ";
+      renderWorkbench();
+    });
+    document.getElementById("chk-osc133").addEventListener("change", e => { state.enableOsc133 = e.target.checked; });
+    document.getElementById("chk-git-state").addEventListener("change", e => { state.gitShowState = e.target.checked; });
+
+    document.getElementById("btn-sync-ecosystem").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --sync-ecosystem"); return; }
+      const resp = await fetch("/api/sync-ecosystem", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      if (data.ok) showToast(`Synced fzf, LS_COLORS & tmux (${data.result.theme})!`);
     });
 
     document.getElementById("btn-copy-reload").addEventListener("click", async () => {
@@ -1517,6 +1723,10 @@
     document.getElementById("btn-save-layout").addEventListener("click", () => {
       applyChanges({
         format: state.formatSegments,
+        right_format: state.rightSegments,
+        right_fill_char: state.rightFillChar,
+        enable_osc133: state.enableOsc133,
+        git_show_state: state.gitShowState,
         enable_command_on_new_line: state.twoLine,
         enable_vertical_padding: state.verticalPadding,
         max_pwd_char: state.maxPwdChar,

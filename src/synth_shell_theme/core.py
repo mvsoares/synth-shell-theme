@@ -59,6 +59,7 @@ VALID_FORMAT_TOKENS: tuple[str, ...] = (
     "SHLVL",
     "RUST",
     "GO",
+    "BATTERY",
 )
 
 VALID_FONT_EFFECTS: tuple[str, ...] = (
@@ -416,6 +417,11 @@ def read_current_state(
     active_name, active_id = detect_current_theme(catalog, base)
 
     format_str = "HOST PWD GIT PYENV TF KUBE"
+    right_format_str = ""
+    right_fill_char = "─"
+    enable_osc133 = True
+    git_show_state = True
+    battery_threshold = 100
     new_line = True
     vertical_padding = True
     max_pwd_char = 35
@@ -448,6 +454,16 @@ def read_current_state(
             val = _unquote(m_kv.group(2))
             if key == "format":
                 format_str = " ".join(tok for tok in val.upper().split() if tok in VALID_FORMAT_TOKENS) or format_str
+            elif key == "right_format":
+                right_format_str = " ".join(tok for tok in val.upper().split() if tok in VALID_FORMAT_TOKENS)
+            elif key == "right_fill_char":
+                right_fill_char = val or " "
+            elif key == "enable_osc133":
+                enable_osc133 = val.lower() in ("true", "1", "yes")
+            elif key == "git_show_state":
+                git_show_state = val.lower() in ("true", "1", "yes")
+            elif key == "battery_threshold" and val.isdigit():
+                battery_threshold = int(val)
             elif key == "enable_command_on_new_line":
                 new_line = val.lower() in ("true", "1", "yes")
             elif key == "enable_vertical_padding":
@@ -518,6 +534,12 @@ def read_current_state(
         },
         "format": format_str,
         "format_segments": format_str.split(),
+        "right_format": right_format_str,
+        "right_format_segments": right_format_str.split() if right_format_str else [],
+        "right_fill_char": right_fill_char,
+        "enable_osc133": enable_osc133,
+        "git_show_state": git_show_state,
+        "battery_threshold": battery_threshold,
         "enable_command_on_new_line": new_line,
         "enable_vertical_padding": vertical_padding,
         "max_pwd_char": max_pwd_char,
@@ -722,6 +744,11 @@ def apply_separators(
 
 def apply_layout_options(
     format_str: str | None = None,
+    right_format_str: str | None = None,
+    right_fill_char: str | None = None,
+    enable_osc133: bool | None = None,
+    git_show_state: bool | None = None,
+    battery_threshold: int | None = None,
     new_line: bool | None = None,
     vertical_padding: bool | None = None,
     max_pwd_char: int | None = None,
@@ -758,6 +785,21 @@ def apply_layout_options(
         if tokens:
             clean_format = " ".join(tokens)
             updates["format"] = clean_format
+
+    clean_right_format: str | None = None
+    if right_format_str is not None:
+        rtokens = [t for t in right_format_str.upper().replace(",", " ").split() if t in VALID_FORMAT_TOKENS]
+        clean_right_format = " ".join(rtokens)
+        updates["right_format"] = clean_right_format
+    if right_fill_char is not None:
+        updates["right_fill_char"] = right_fill_char[:1] if right_fill_char else " "
+    if enable_osc133 is not None:
+        updates["enable_osc133"] = "true" if enable_osc133 else "false"
+    if git_show_state is not None:
+        updates["git_show_state"] = "true" if git_show_state else "false"
+    if battery_threshold is not None:
+        battery_threshold = max(5, min(100, int(battery_threshold)))
+        updates["battery_threshold"] = str(battery_threshold)
 
     if new_line is not None:
         updates["enable_command_on_new_line"] = "true" if new_line else "false"
@@ -1061,6 +1103,11 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
         "internal_separator": state["internal_separator"],
         "end_separator": state["end_separator"],
         "format": state["format"],
+        "right_format": state["right_format"],
+        "right_fill_char": state["right_fill_char"],
+        "enable_osc133": state["enable_osc133"],
+        "git_show_state": state["git_show_state"],
+        "battery_threshold": state["battery_threshold"],
         "enable_command_on_new_line": state["enable_command_on_new_line"],
         "enable_vertical_padding": state["enable_vertical_padding"],
         "max_pwd_char": state["max_pwd_char"],
@@ -1122,6 +1169,11 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
 
     apply_layout_options(
         format_str=str(data["format"]) if "format" in data else None,
+        right_format_str=str(data["right_format"]) if "right_format" in data else None,
+        right_fill_char=str(data["right_fill_char"]) if "right_fill_char" in data else None,
+        enable_osc133=bool(data["enable_osc133"]) if "enable_osc133" in data else None,
+        git_show_state=bool(data["git_show_state"]) if "git_show_state" in data else None,
+        battery_threshold=int(data["battery_threshold"]) if "battery_threshold" in data else None,
         new_line=bool(data["enable_command_on_new_line"]) if "enable_command_on_new_line" in data else None,
         vertical_padding=bool(data["enable_vertical_padding"]) if "enable_vertical_padding" in data else None,
         max_pwd_char=int(data["max_pwd_char"]) if "max_pwd_char" in data else None,
@@ -1327,8 +1379,8 @@ _synth_shell_theme_complete()
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
-    local subcmds="tui web studio sep init doctor bench export import completion"
-    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
+    local subcmds="tui web studio sep init doctor bench export import import-theme export-web completion"
+    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --right-format --right-fill --osc133 --no-osc133 --git-state --no-git-state --battery-threshold --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --sync-ecosystem --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
     local themes="{theme_slugs}"
     local seps="{sep_keys}"
     local segs="{seg_tokens}"
@@ -1365,3 +1417,142 @@ _synth_shell_theme_complete()
 }}
 complete -F _synth_shell_theme_complete synth-shell-theme synth-shell-separator
 """
+
+
+def doctor_fix(
+    config_dir: Path | None = None,
+    auto_ascii: bool = False,
+) -> dict[str, object]:
+    """Auto-repair common synth-shell issues: apply pending patches, fix CRLF line endings, optional ASCII fallback."""
+    from synth_shell_theme.paths import detect_nerd_fonts, detect_utf8_locale
+
+    base = config_dir if config_dir is not None else get_config_dir()
+    actions: list[str] = []
+
+    # 1. Normalize CRLF -> LF on managed shell scripts and configs
+    for fname in (
+        "synth-shell-prompt.sh",
+        "synth-shell-prompt.config",
+        "synth-shell-prompt.root.config",
+        "alias.sh",
+        "better-ls.sh",
+        "better-history.sh",
+        "synth-shell-greeter.sh",
+        "synth-shell-greeter.config",
+    ):
+        fpath = base / fname
+        if not fpath.is_file():
+            continue
+        raw = fpath.read_bytes()
+        if b"\r\n" in raw:
+            fpath.write_bytes(raw.replace(b"\r\n", b"\n"))
+            actions.append(f"normalized_lf:{fname}")
+
+    # 2. Apply all missing runtime patches
+    patch_res = apply_runtime_patches(config_dir=base, tune_defaults=False)
+    for ch in patch_res["changes"]:  # type: ignore[union-attr]
+        actions.append(f"patch:{ch}")
+
+    # 3. Optional ASCII-safe fallback if locale is not UTF-8 or no Nerd Fonts detected
+    loc = detect_utf8_locale()
+    nf = detect_nerd_fonts()
+    if auto_ascii and (not loc.get("utf8") or not nf.get("detected")):
+        apply_ascii_safe_mode(config_dir=base)
+        actions.append("applied:ascii_safe_fallback")
+
+    return {
+        "actions": actions,
+        "patches": patch_res["status"],
+        "locale_utf8": bool(loc.get("utf8")),
+        "nerd_fonts_detected": bool(nf.get("detected")),
+    }
+
+
+def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Path:
+    """Build a standalone static HTML demo of the Web Studio (ideal for GitHub Pages)."""
+    from synth_shell_theme import __version__
+    from synth_shell_theme.paths import get_assets_dir
+    from synth_shell_theme.separators import serialize_separators_for_web
+    from synth_shell_theme.themes import serialize_theme_for_web
+
+    studio_src = (get_assets_dir() / "studio.html").read_text(encoding="utf-8")
+    catalog = load_themes(include_user_themes=False)
+    serialized = [serialize_theme_for_web(t, idx) for idx, t in enumerate(catalog, 1)]
+    static_boot = {
+        "static_demo": True,
+        "version": __version__,
+        "themes": serialized,
+        "separators": serialize_separators_for_web(),
+        "valid_segments": list(VALID_FORMAT_TOKENS),
+        "valid_font_effects": list(VALID_FONT_EFFECTS),
+        "state": {
+            "active_theme": "Tokyo Night",
+            "active_theme_id": 12,
+            "internal_separator": {"glyph": "\ue0b4", "code": "\\uE0B4", "key": "round"},
+            "end_separator": {"glyph": "\ue0b0", "code": "\\uE0B0", "key": "arrow", "explicit": True},
+            "format": "HOST PWD GIT PYENV TF",
+            "format_segments": ["HOST", "PWD", "GIT", "PYENV", "TF"],
+            "right_format": "KUBE DURATION CLOCK",
+            "right_format_segments": ["KUBE", "DURATION", "CLOCK"],
+            "right_fill_char": "─",
+            "enable_osc133": True,
+            "git_show_state": True,
+            "battery_threshold": 100,
+            "enable_command_on_new_line": True,
+            "enable_vertical_padding": True,
+            "max_pwd_char": 35,
+            "max_git_char": 0,
+            "max_pyenv_char": 0,
+            "max_kube_char": 28,
+            "compact_width": 90,
+            "git_show_counts": True,
+            "transient_prompt": False,
+            "prompt_prefix": "",
+            "font_effect": "bold",
+            "enable_terminal_title": True,
+            "git_skip_untracked_on_slow_fs": True,
+            "git_timeout_ms": 0,
+            "git_async_cache": False,
+            "min_duration_ms": 2000,
+            "root_config_exists": True,
+            "patches": {
+                "kube_fast": True,
+                "git_single_pass": True,
+                "git_wsl_fast": True,
+                "git_ahead_behind_counts": True,
+                "git_advanced_state": True,
+                "dual_separator": True,
+                "color_256_parity": True,
+                "truecolor_24bit": True,
+                "zero_fork_render": True,
+                "v11_segments": True,
+                "v12_segments": True,
+                "v13_segments": True,
+                "osc133_semantic": True,
+                "right_prompt": True,
+                "responsive_width": True,
+                "hook_chaining": True,
+                "pyenv_enhanced": True,
+                "utf8_ps1_guard": True,
+                "interactive_guard": True,
+            },
+        },
+        "greeter": {
+            "config_exists": True,
+            "monitors": list(DEFAULT_GREETER_MONITORS),
+            "available_monitors": list(GREETER_ALL_MONITORS),
+            "has_swap": True,
+        },
+        "diagnostics": {
+            "locale": {"utf8": True, "effective": "en_US.UTF-8"},
+            "nerd_fonts": {"detected": True, "count": 4, "samples": ["JetBrainsMono Nerd Font", "FiraCode Nerd Font"]},
+            "terminal": {"term": "xterm-256color", "colorterm": "truecolor", "truecolor": True, "term_256": True},
+        },
+        "backups": [],
+    }
+    boot_json = json.dumps(static_boot, ensure_ascii=False).replace("</", "<\\/")
+    inject = f"<script>window.__SYNTH_STATIC_BOOTSTRAP__ = {boot_json};</script>\n</head>"
+    out_html = studio_src.replace("</head>", inject, 1)
+    dest = Path(dest_path).expanduser()
+    _atomic_write(dest, out_html)
+    return dest

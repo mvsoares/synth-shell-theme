@@ -49,7 +49,7 @@ FAST_GET_KUBE = """getKube()
 \tprintf '☸ %s' "$ctx"
 }"""
 
-SINGLE_PASS_GIT_V12 = """    # synth-shell-theme: git_single_pass v12 (WSL fast + timeout + async cache + ahead/behind counts + max_git_char)
+SINGLE_PASS_GIT_V13 = """    # synth-shell-theme: git_single_pass v13 (WSL fast + timeout + async + counts + rebase/merge/worktree + max_git_char)
     local _git_flags="--porcelain -b"
     if [[ "${SSP_GIT_SKIP_UNTRACKED_ON_SLOW_FS:-true}" == "true" ]]; then
         if [[ "$PWD" == /mnt/[a-z]/* || "$PWD" == /mnt/[a-z] ]]; then
@@ -110,6 +110,51 @@ SINGLE_PASS_GIT_V12 = """    # synth-shell-theme: git_single_pass v12 (WSL fast 
         [[ -n "$_ahead_n" ]] && _ab_counts+=" ↑${_ahead_n}"
         [[ -n "$_behind_n" ]] && _ab_counts+=" ↓${_behind_n}"
         [[ -n "$_ab_counts" ]] && branch="${branch}${_ab_counts}"
+    fi
+    if [[ "${SSP_GIT_SHOW_STATE:-true}" == "true" ]]; then
+        local _gwalk="$PWD" _gdir="" _wt_name="" _gstep=0
+        while [[ -n "$_gwalk" && $_gstep -lt 15 ]]; do
+            if [[ -d "${_gwalk}/.git" ]]; then
+                _gdir="${_gwalk}/.git"
+                break
+            elif [[ -f "${_gwalk}/.git" ]]; then
+                local _gline=""
+                IFS= read -r _gline < "${_gwalk}/.git"
+                if [[ "$_gline" == gitdir:* ]]; then
+                    _gdir="${_gline#gitdir:}"
+                    _gdir="${_gdir#"${_gdir%%[![:space:]]*}"}"
+                    [[ "$_gdir" != /* ]] && _gdir="${_gwalk}/${_gdir}"
+                    if [[ "$_gdir" == */worktrees/* ]]; then
+                        _wt_name="${_gdir##*/worktrees/}"
+                        _wt_name="${_wt_name%%/*}"
+                    fi
+                fi
+                break
+            fi
+            [[ "$_gwalk" == "/" ]] && break
+            _gwalk="${_gwalk%/*}"
+            [[ -z "$_gwalk" ]] && _gwalk="/"
+            _gstep=$((_gstep + 1))
+        done
+        if [[ -n "$_gdir" ]]; then
+            local _gstate=""
+            if [[ -d "${_gdir}/rebase-merge" ]]; then
+                local _rn="" _re=""
+                [[ -r "${_gdir}/rebase-merge/msgnum" ]] && IFS= read -r _rn < "${_gdir}/rebase-merge/msgnum"
+                [[ -r "${_gdir}/rebase-merge/end" ]] && IFS= read -r _re < "${_gdir}/rebase-merge/end"
+                _gstate="REBASE${_rn:+ ${_rn}/${_re}}"
+            elif [[ -d "${_gdir}/rebase-apply" ]]; then
+                _gstate="REBASE"
+            elif [[ -f "${_gdir}/MERGE_HEAD" ]]; then
+                _gstate="MERGE"
+            elif [[ -f "${_gdir}/CHERRY_PICK_HEAD" ]]; then
+                _gstate="CHERRY"
+            elif [[ -f "${_gdir}/BISECT_LOG" ]]; then
+                _gstate="BISECT"
+            fi
+            [[ -n "$_wt_name" ]] && branch="${branch} ⎇${_wt_name}"
+            [[ -n "$_gstate" ]] && branch="${branch} | ${_gstate}"
+        fi
     fi"""
 
 PATCHED_COLOR_CODES = """getColorCode()
@@ -391,11 +436,14 @@ ENHANCED_GET_PYENV = """getPyenv()
 
 V12_SEGMENTS_BLOCK = """# synth-shell-theme: v11_segments
 # synth-shell-theme: v12_segments
+# synth-shell-theme: v13_segments
 # synth-shell-theme: responsive_width
+# synth-shell-theme: osc133_semantic
+# synth-shell-theme: right_prompt
 _ssp_has_element()
 {
 \tlocal target="$1" item
-\tfor item in "${SSP_ELEMENTS[@]}"; do
+\tfor item in "${SSP_ELEMENTS[@]}" "${SSP_RIGHT_ELEMENTS[@]}"; do
 \t\t[[ "$item" == "$target" ]] && return 0
 \tdone
 \treturn 1
@@ -559,6 +607,30 @@ getGo()
 \t[[ -z "$ver" ]] && return
 \tprintf '🐹 %s' "$ver"
 }
+getBattery()
+{
+\tlocal bat_dir="" cap="" st=""
+\tlocal d
+\tfor d in /sys/class/power_supply/BAT* /sys/class/power_supply/macsmc-battery; do
+\t\tif [[ -r "${d}/capacity" ]]; then
+\t\t\tbat_dir="$d"
+\t\t\tbreak
+\t\tfi
+\tdone
+\t[[ -z "$bat_dir" ]] && return
+\tIFS= read -r cap < "${bat_dir}/capacity"
+\t[[ -r "${bat_dir}/status" ]] && IFS= read -r st < "${bat_dir}/status"
+\t[[ ! "$cap" =~ ^[0-9]+$ ]] && return
+\tlocal thresh="${SSP_BATTERY_THRESHOLD:-100}"
+\t(( cap > thresh )) && return
+\tlocal icon="🔋"
+\tif [[ "$st" == "Charging" ]]; then
+\t\ticon="⚡"
+\telif (( cap <= 20 )); then
+\t\ticon="🪫"
+\tfi
+\tprintf '%s %d%%' "$icon" "$cap"
+}
 _ssp_format_duration_var()
 {
 \t_SSP_DUR=""
@@ -603,6 +675,7 @@ V12_COLORS_FOR_ELEMENT = """get_colors_for_element()
 \t\t"SHLVL")    echo "${SSP_COLORS_SHLVL[@]}" ;;
 \t\t"RUST")     echo "${SSP_COLORS_RUST[@]}" ;;
 \t\t"GO")       echo "${SSP_COLORS_GO[@]}" ;;
+\t\t"BATTERY")  echo "${SSP_COLORS_BATTERY[@]}" ;;
 \t\t"INPUT")    echo "${SSP_COLORS_INPUT[@]}" ;;
 \t\t*) ;;
 \tesac
@@ -630,12 +703,41 @@ _ssp_colors_var()
 \t\t"SHLVL")    _SSP_EL_C=("${SSP_COLORS_SHLVL[@]}") ;;
 \t\t"RUST")     _SSP_EL_C=("${SSP_COLORS_RUST[@]}") ;;
 \t\t"GO")       _SSP_EL_C=("${SSP_COLORS_GO[@]}") ;;
+\t\t"BATTERY")  _SSP_EL_C=("${SSP_COLORS_BATTERY[@]}") ;;
 \t\t"INPUT")    _SSP_EL_C=("${SSP_COLORS_INPUT[@]}") ;;
 \t\t*)          _SSP_EL_C=(white none bold) ;;
 \tesac
 }"""
 
-V12_COMBINE_ELEMENTS = """_ssp_combine_var()
+V12_COMBINE_ELEMENTS = """_ssp_text_for_el()
+{
+\tcase "${1:-}" in
+\t\t"USER")     _SSP_EL_TXT="${user:-}" ;;
+\t\t"HOST")     _SSP_EL_TXT="${host:-}" ;;
+\t\t"PWD")      _SSP_EL_TXT="${path:-}" ;;
+\t\t"GIT")      _SSP_EL_TXT="${git_branch:-}" ;;
+\t\t"PYENV")    _SSP_EL_TXT="${pyenv:-}" ;;
+\t\t"KUBE")     _SSP_EL_TXT="${kube:-}" ;;
+\t\t"TF")       _SSP_EL_TXT="${tf:-}" ;;
+\t\t"CLOCK")    _SSP_EL_TXT="${clock:-}" ;;
+\t\t"STATUS")   _SSP_EL_TXT="${status_seg:-}" ;;
+\t\t"DURATION") _SSP_EL_TXT="${duration_seg:-}" ;;
+\t\t"AWS")      _SSP_EL_TXT="${aws_seg:-}" ;;
+\t\t"GCP")      _SSP_EL_TXT="${gcp_seg:-}" ;;
+\t\t"DOCKER")   _SSP_EL_TXT="${docker_seg:-}" ;;
+\t\t"NODE")     _SSP_EL_TXT="${node_seg:-}" ;;
+\t\t"SSH")      _SSP_EL_TXT="${ssh_seg:-}" ;;
+\t\t"JOBS")     _SSP_EL_TXT="${jobs_seg:-}" ;;
+\t\t"DIRENV")   _SSP_EL_TXT="${direnv_seg:-}" ;;
+\t\t"SHLVL")    _SSP_EL_TXT="${shlvl_seg:-}" ;;
+\t\t"RUST")     _SSP_EL_TXT="${rust_seg:-}" ;;
+\t\t"GO")       _SSP_EL_TXT="${go_seg:-}" ;;
+\t\t"BATTERY")  _SSP_EL_TXT="${battery_seg:-}" ;;
+\t\t"INPUT")    _SSP_EL_TXT="" ;;
+\t\t*)          _SSP_EL_TXT="" ;;
+\tesac
+}
+_ssp_combine_var()
 {
 \tlocal first="${1:-}"
 \tlocal second="${2:-}"
@@ -645,31 +747,8 @@ V12_COMBINE_ELEMENTS = """_ssp_combine_var()
 \tlocal text_effect="${_SSP_EL_C[2]:-bold}"
 \t_ssp_colors_var "$second"
 \tlocal next_bg_color="${_SSP_EL_C[1]:-none}"
-\tlocal text=""
-\tcase "$first" in
-\t\t"USER")     text="${user:-}" ;;
-\t\t"HOST")     text="${host:-}" ;;
-\t\t"PWD")      text="${path:-}" ;;
-\t\t"GIT")      text="${git_branch:-}" ;;
-\t\t"PYENV")    text="${pyenv:-}" ;;
-\t\t"KUBE")     text="${kube:-}" ;;
-\t\t"TF")       text="${tf:-}" ;;
-\t\t"CLOCK")    text="${clock:-}" ;;
-\t\t"STATUS")   text="${status_seg:-}" ;;
-\t\t"DURATION") text="${duration_seg:-}" ;;
-\t\t"AWS")      text="${aws_seg:-}" ;;
-\t\t"GCP")      text="${gcp_seg:-}" ;;
-\t\t"DOCKER")   text="${docker_seg:-}" ;;
-\t\t"NODE")     text="${node_seg:-}" ;;
-\t\t"SSH")      text="${ssh_seg:-}" ;;
-\t\t"JOBS")     text="${jobs_seg:-}" ;;
-\t\t"DIRENV")   text="${direnv_seg:-}" ;;
-\t\t"SHLVL")    text="${shlvl_seg:-}" ;;
-\t\t"RUST")     text="${rust_seg:-}" ;;
-\t\t"GO")       text="${go_seg:-}" ;;
-\t\t"INPUT")    text="" ;;
-\t\t*)          text="" ;;
-\tesac
+\t_ssp_text_for_el "$first"
+\tlocal text="$_SSP_EL_TXT"
 \tlocal sep_char="${separator_char:-}"
 \tif [ "$second" = "INPUT" ] && [ -n "${separator_char_end:-}" ]; then
 \t\tsep_char="$separator_char_end"
@@ -685,7 +764,8 @@ combine_elements()
 V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 {
 \tlocal last_exit=$?
-\tlocal elements=("${SSP_ELEMENTS[@]}")
+\tlocal elements=(${SSP_ELEMENTS[@]+"${SSP_ELEMENTS[@]}"})
+\tlocal right_elements=(${SSP_RIGHT_ELEMENTS[@]+"${SSP_RIGHT_ELEMENTS[@]}"})
 \tlocal user="${USER:-}"
 \tlocal host="${HOSTNAME:-}"
 \tlocal _is_compact=0
@@ -699,7 +779,7 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tfi
 \tlocal path="" git_branch="" pyenv="" kube="" tf="" clock=""
 \tlocal status_seg="" duration_seg="" aws_seg="" gcp_seg="" docker_seg="" node_seg="" ssh_seg=""
-\tlocal jobs_seg="" direnv_seg="" shlvl_seg="" rust_seg="" go_seg=""
+\tlocal jobs_seg="" direnv_seg="" shlvl_seg="" rust_seg="" go_seg="" battery_seg=""
 
 \t_ssp_has_element "PWD" && path="$(shortenPath "$PWD" "$_eff_pwd_max" "${SSP_PWD_TRUNC_SYMBOL:-…}")"
 \t_ssp_has_element "GIT" && git_branch="$(getGitBranch)"
@@ -716,6 +796,7 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t\t_ssp_has_element "NODE" && node_seg="$(getNode)"
 \t\t_ssp_has_element "RUST" && rust_seg="$(getRust)"
 \t\t_ssp_has_element "GO" && go_seg="$(getGo)"
+\t\t_ssp_has_element "BATTERY" && battery_seg="$(getBattery)"
 \tfi
 \tif _ssp_has_element "STATUS" && (( last_exit != 0 )); then
 \t\tstatus_seg="${SSP_STATUS_SYMBOL:-✗ }${last_exit}"
@@ -730,31 +811,22 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t_ssp_has_element "DIRENV" && direnv_seg="$(getDirenv)"
 \t_ssp_has_element "SHLVL" && shlvl_seg="$(getShlvl)"
 
-\tlocal filtered=()
-\tlocal _el
+\tlocal filtered=() _el
 \tfor _el in "${elements[@]}"; do
-\t\tcase "$_el" in
-\t\t\t"GIT")      [[ -n "$git_branch" ]]   && filtered+=("$_el") ;;
-\t\t\t"PYENV")    [[ -n "$pyenv" ]]        && filtered+=("$_el") ;;
-\t\t\t"TF")       [[ -n "$tf" ]]           && filtered+=("$_el") ;;
-\t\t\t"KUBE")     [[ -n "$kube" ]]         && filtered+=("$_el") ;;
-\t\t\t"CLOCK")    [[ -n "$clock" ]]        && filtered+=("$_el") ;;
-\t\t\t"STATUS")   [[ -n "$status_seg" ]]   && filtered+=("$_el") ;;
-\t\t\t"DURATION") [[ -n "$duration_seg" ]] && filtered+=("$_el") ;;
-\t\t\t"AWS")      [[ -n "$aws_seg" ]]      && filtered+=("$_el") ;;
-\t\t\t"GCP")      [[ -n "$gcp_seg" ]]      && filtered+=("$_el") ;;
-\t\t\t"DOCKER")   [[ -n "$docker_seg" ]]   && filtered+=("$_el") ;;
-\t\t\t"NODE")     [[ -n "$node_seg" ]]     && filtered+=("$_el") ;;
-\t\t\t"SSH")      [[ -n "$ssh_seg" ]]      && filtered+=("$_el") ;;
-\t\t\t"JOBS")     [[ -n "$jobs_seg" ]]     && filtered+=("$_el") ;;
-\t\t\t"DIRENV")   [[ -n "$direnv_seg" ]]   && filtered+=("$_el") ;;
-\t\t\t"SHLVL")    [[ -n "$shlvl_seg" ]]    && filtered+=("$_el") ;;
-\t\t\t"RUST")     [[ -n "$rust_seg" ]]     && filtered+=("$_el") ;;
-\t\t\t"GO")       [[ -n "$go_seg" ]]       && filtered+=("$_el") ;;
-\t\t\t*)          filtered+=("$_el") ;;
-\t\tesac
+\t\t_ssp_text_for_el "$_el"
+\t\tif [[ "$_el" == "INPUT" || -n "$_SSP_EL_TXT" ]]; then
+\t\t\tfiltered+=("$_el")
+\t\tfi
 \tdone
 \telements=("${filtered[@]}")
+
+\tlocal r_filtered=()
+\tif (( _is_compact == 0 && ${#right_elements[@]} > 0 )) && [[ -n "${SSP_PROMPT_COMM_SEP:-}" ]]; then
+\t\tfor _el in "${right_elements[@]}"; do
+\t\t\t_ssp_text_for_el "$_el"
+\t\t\t[[ -n "$_SSP_EL_TXT" ]] && r_filtered+=("$_el")
+\t\tdone
+\tfi
 
 \tlocal titlebar=""
 \tif [[ "${SSP_ENABLE_TERMINAL_TITLE:-true}" == "true" ]]; then
@@ -766,14 +838,52 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t\tesac
 \tfi
 
-\tPS1="${titlebar}${SSP_VERTICAL_PADDING:-}${SSP_NEW_LINE_LINK_TOP:-}${SSP_PROMPT_PREFIX:-}"
-\tlocal idx=0
-\tlocal total="${#elements[@]}"
+\tlocal osc_pre="" osc_post=""
+\tif [[ "${SSP_ENABLE_OSC133:-true}" == "true" ]]; then
+\t\tif (( ${_SSP_HAS_RUN:-0} == 1 )); then
+\t\t\tosc_pre="\\[\\e]133;D;${last_exit}\\e\\\\\\]\\[\\e]133;A\\e\\\\\\]"
+\t\telse
+\t\t\tosc_pre="\\[\\e]133;A\\e\\\\\\]"
+\t\tfi
+\t\tosc_post="\\[\\e]133;B\\e\\\\\\]"
+\t\t_SSP_HAS_RUN=1
+\tfi
+
+\tPS1="${osc_pre}${titlebar}${SSP_VERTICAL_PADDING:-}${SSP_NEW_LINE_LINK_TOP:-}${SSP_PROMPT_PREFIX:-}"
+\tlocal _top_s="${SSP_NEW_LINE_LINK_TOP:-}" _pre_s="${SSP_PROMPT_PREFIX:-}" _pad_s="${segment_padding:- }"
+\tlocal left_vis=$(( ${#_top_s} + ${#_pre_s} ))
+\tlocal pad_w=$(( ${#_pad_s} * 2 + 1 ))
+\tlocal idx=0 total="${#elements[@]}"
 \twhile (( idx + 1 < total )); do
+\t\t_ssp_text_for_el "${elements[$idx]}"
+\t\tleft_vis=$(( left_vis + ${#_SSP_EL_TXT} + pad_w ))
 \t\t_ssp_combine_var "${elements[$idx]}" "${elements[$((idx + 1))]}"
 \t\tPS1+="$_SSP_SEG_OUT"
 \t\tidx=$((idx + 1))
 \tdone
+
+\tif (( ${#r_filtered[@]} > 0 )); then
+\t\tlocal right_str="" right_vis=0 r_idx=0 r_tot="${#r_filtered[@]}"
+\t\twhile (( r_idx < r_tot )); do
+\t\t\tlocal r_cur="${r_filtered[$r_idx]}"
+\t\t\tlocal r_nxt="INPUT"
+\t\t\t(( r_idx + 1 < r_tot )) && r_nxt="${r_filtered[$((r_idx + 1))]}"
+\t\t\t_ssp_text_for_el "$r_cur"
+\t\t\tright_vis=$(( right_vis + ${#_SSP_EL_TXT} + pad_w ))
+\t\t\t_ssp_combine_var "$r_cur" "$r_nxt"
+\t\t\tright_str+="$_SSP_SEG_OUT"
+\t\t\tr_idx=$((r_idx + 1))
+\t\tdone
+\t\tlocal fill_len=$(( ${COLUMNS:-120} - left_vis - right_vis - 2 ))
+\t\tif (( fill_len >= 2 )); then
+\t\t\tlocal fill_ch="${SSP_RIGHT_FILL_CHAR:-─}"
+\t\t\tlocal fill_spaces=""
+\t\t\tprintf -v fill_spaces '%*s' "$fill_len" ""
+\t\t\tlocal fill_line="${fill_spaces// /$fill_ch}"
+\t\t\tPS1+=" \\[\\e[0;38;5;239m\\]${fill_line}\\[\\e[0;0m\\] ${right_str}"
+\t\tfi
+\tfi
+
 \t_ssp_colors_var "${elements[$idx]}"
 \tlocal input_color="${_SSP_EL_C[0]:-white}"
 \tlocal input_bg="${_SSP_EL_C[1]:-none}"
@@ -781,12 +891,18 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t_ssp_fmt_var "$input_color" "$input_bg" "$input_effect"
 \tlocal input_format="$_SSP_FMT"
 \tlocal command_start_symbol="${input_format}${SSP_BASH_SYMBOL:-}"
-\tPS1="${PS1}${SSP_PROMPT_COMM_SEP:-}${SSP_NEW_LINE_LINK_BOTTOM:-}${command_start_symbol} ${input_format}"
+\tPS1="${PS1}${SSP_PROMPT_COMM_SEP:-}${SSP_NEW_LINE_LINK_BOTTOM:-}${command_start_symbol} ${input_format}${osc_post}"
 }"""
 
 V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \t# synth-shell-theme: v12_init
+\t# synth-shell-theme: v13_init
 \t# synth-shell-theme: hook_chaining
+\tSSP_RIGHT_ELEMENTS=(${right_format:-})
+\tSSP_RIGHT_FILL_CHAR="${right_fill_char:-─}"
+\tSSP_ENABLE_OSC133=${enable_osc133:-true}
+\tSSP_GIT_SHOW_STATE=${git_show_state:-true}
+\tSSP_BATTERY_THRESHOLD=${battery_threshold:-100}
 \tSSP_COLORS_STATUS=(${font_color_status:-white} ${background_status:-196} ${texteffect_status:-bold})
 \tSSP_COLORS_DURATION=(${font_color_duration:-black} ${background_duration:-220} ${texteffect_duration:-bold})
 \tSSP_COLORS_AWS=(${font_color_aws:-black} ${background_aws:-208} ${texteffect_aws:-bold})
@@ -799,6 +915,7 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \tSSP_COLORS_SHLVL=(${font_color_shlvl:-white} ${background_shlvl:-99} ${texteffect_shlvl:-bold})
 \tSSP_COLORS_RUST=(${font_color_rust:-white} ${background_rust:-166} ${texteffect_rust:-bold})
 \tSSP_COLORS_GO=(${font_color_go:-black} ${background_go:-81} ${texteffect_go:-bold})
+\tSSP_COLORS_BATTERY=(${font_color_battery:-black} ${background_battery:-114} ${texteffect_battery:-bold})
 \tSSP_MAX_GIT_CHAR=${max_git_char:-0}
 \tSSP_MAX_PYENV_CHAR=${max_pyenv_char:-0}
 \tSSP_MAX_KUBE_CHAR=${max_kube_char:-28}
@@ -826,10 +943,13 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \tfi
 \t_SSP_EMPTY=""
 \t_SSP_CMD_START_MS=0
+\t_SSP_HAS_RUN=0
+\tlocal _ps0_osc=""
+\t[[ "${SSP_ENABLE_OSC133}" == "true" ]] && _ps0_osc=$'\\e]133;C\\e\\\\'
 \tif [[ -n "${EPOCHREALTIME:-}" ]]; then
-\t\tPS0=$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=${EPOCHREALTIME/./}/1000, 0))}'
+\t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=${EPOCHREALTIME/./}/1000, 0))}'
 \telse
-\t\tPS0=$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=SECONDS*1000, 0))}'
+\t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=SECONDS*1000, 0))}'
 \tfi
 \tif [[ "${SSP_TRANSIENT_PROMPT}" == "true" && -n "${BLE_VERSION:-}" ]] && command -v bleopt >/dev/null 2>&1; then
 \t\tbleopt prompt_ps1_transient=trim 2>/dev/null || true
@@ -935,14 +1055,19 @@ _V11_SEGS_BLOCK_RE = re.compile(
 )
 _GET_COLORS_RE = _fn_re("get_colors_for_element")
 _COMBINE_V11_RE = re.compile(
-    r"^_ssp_combine_var\(\)\s*\{.*?\n\}\ncombine_elements\(\)\s*\{.*?\n\}",
+    r"^(?:_ssp_text_for_el\(\)\s*\{.*?\n\}\n)?_ssp_combine_var\(\)\s*\{.*?\n\}\ncombine_elements\(\)\s*\{.*?\n\}",
     re.MULTILINE | re.DOTALL,
 )
 _COMBINE_FULL_RE = _fn_re("combine_elements")
 _PROMPT_HOOK_RE = _fn_re("prompt_command_hook")
 _GET_EFFECT_RE = _fn_re("getEffectCode")
 _V11_INIT_AND_PC_RE = re.compile(
-    r"^\t# synth-shell-theme: v11_init\n.*?\tPROMPT_COMMAND=prompt_command_hook",
+    r"^\t# synth-shell-theme: v11_init\n.*?(?:\tPROMPT_COMMAND=prompt_command_hook|\t\tesac\n\tfi)",
+    re.MULTILINE | re.DOTALL,
+)
+_V12_GIT_RE = re.compile(
+    r"^[ \t]*# synth-shell-theme: git_single_pass v12[^\n]*\n.*?"
+    r"[ \t]*\[\[ -n \"\$_ab_counts\" \]\] && branch=\"\$\{branch\}\$\{_ab_counts\}\"\n[ \t]*fi",
     re.MULTILINE | re.DOTALL,
 )
 _DEBUG_TRAP_RE = re.compile(
@@ -1036,12 +1161,16 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
             "git_single_pass": False,
             "git_wsl_fast": False,
             "git_ahead_behind_counts": False,
+            "git_advanced_state": False,
             "dual_separator": False,
             "color_256_parity": False,
             "truecolor_24bit": False,
             "zero_fork_render": False,
             "v11_segments": False,
             "v12_segments": False,
+            "v13_segments": False,
+            "osc133_semantic": False,
+            "right_prompt": False,
             "responsive_width": False,
             "hook_chaining": False,
             "pyenv_enhanced": False,
@@ -1064,13 +1193,19 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         or '[[ -n "$(git status --porcelain)" ]]' not in content
     )
     git_wsl_fast = (
-        "synth-shell-theme: git_single_pass v12" in content
+        "synth-shell-theme: git_single_pass v13" in content
+        or "synth-shell-theme: git_single_pass v12" in content
         or "synth-shell-theme: git_single_pass v11" in content
         or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content))
     )
     git_ahead_behind_counts = (
-        "synth-shell-theme: git_single_pass v12" in content
+        "synth-shell-theme: git_single_pass v13" in content
+        or "synth-shell-theme: git_single_pass v12" in content
         or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content) or _V11_GIT_RE.search(content))
+    )
+    git_advanced_state = (
+        "synth-shell-theme: git_single_pass v13" in content
+        or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content) or _V11_GIT_RE.search(content) or _V12_GIT_RE.search(content))
     )
     dual_separator = (
         'local sep_char="${6:-${separator_char:-}}"' in content
@@ -1091,6 +1226,13 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         if has_full_hook
         else True
     )
+    v13_segments = (
+        ("synth-shell-theme: v13_segments" in content and "synth-shell-theme: v13_init" in content)
+        if has_full_hook
+        else True
+    )
+    osc133_semantic = ("synth-shell-theme: osc133_semantic" in content) if has_full_hook else True
+    right_prompt = ("synth-shell-theme: right_prompt" in content) if has_full_hook else True
     responsive_width = ("synth-shell-theme: responsive_width" in content) if has_full_hook else True
     hook_chaining = (
         ("synth-shell-theme: hook_chaining" in content and "trap 'echo -ne \"${none}\"' DEBUG" not in content)
@@ -1130,12 +1272,16 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         and git_single_pass
         and git_wsl_fast
         and git_ahead_behind_counts
+        and git_advanced_state
         and dual_separator
         and color_256_parity
         and truecolor_24bit
         and zero_fork_render
         and v11_segments
         and v12_segments
+        and v13_segments
+        and osc133_semantic
+        and right_prompt
         and responsive_width
         and hook_chaining
         and pyenv_enhanced
@@ -1150,12 +1296,16 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         "git_single_pass": git_single_pass,
         "git_wsl_fast": git_wsl_fast,
         "git_ahead_behind_counts": git_ahead_behind_counts,
+        "git_advanced_state": git_advanced_state,
         "dual_separator": dual_separator,
         "color_256_parity": color_256_parity,
         "truecolor_24bit": truecolor_24bit,
         "zero_fork_render": zero_fork_render,
         "v11_segments": v11_segments,
         "v12_segments": v12_segments,
+        "v13_segments": v13_segments,
+        "osc133_semantic": osc133_semantic,
+        "right_prompt": right_prompt,
         "responsive_width": responsive_width,
         "hook_chaining": hook_chaining,
         "pyenv_enhanced": pyenv_enhanced,
@@ -1189,18 +1339,24 @@ def apply_runtime_patches(
             updated = _GET_KUBE_RE.sub(lambda _: FAST_GET_KUBE, updated, count=1)
             changes.append("kube_fast")
 
-        # 2. Single-pass git status + WSL2 fast-untracked + timeout + async cache + ahead/behind counts + max_git_char
+        # 2. Single-pass git status + WSL2 fast-untracked + timeout + async + counts + rebase/merge/worktree
         if _OLD_GIT_RE.search(updated):
-            updated = _OLD_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V12, updated, count=1)
+            updated = _OLD_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
             changes.append("git_single_pass")
             changes.append("git_ahead_behind_counts")
+            changes.append("git_advanced_state")
         elif _V10_GIT_RE.search(updated):
-            updated = _V10_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V12, updated, count=1)
+            updated = _V10_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
             changes.append("git_wsl_fast")
             changes.append("git_ahead_behind_counts")
+            changes.append("git_advanced_state")
         elif _V11_GIT_RE.search(updated):
-            updated = _V11_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V12, updated, count=1)
+            updated = _V11_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
             changes.append("git_ahead_behind_counts")
+            changes.append("git_advanced_state")
+        elif _V12_GIT_RE.search(updated):
+            updated = _V12_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
+            changes.append("git_advanced_state")
 
         # 3. Zero-fork segment renderer + UTF-8 PS1 escape guard + TrueColor 24-bit (#RRGGBB)
         if "synth-shell-theme: truecolor_24bit" not in updated:
@@ -1255,10 +1411,12 @@ def apply_runtime_patches(
                 updated = updated[: m_eff.start()] + eff_patched + updated[m_eff.end() :]
                 changes.append("font_effects")
 
-        # 6. Phase 2, 3 & v1.2 segments + responsive width + safe PROMPT_COMMAND chaining & PS0 reset (no DEBUG trap)
+        # 6. Phase 2, 3, v1.2 & v1.3 segments + RPROMPT + OSC 133 + safe PROMPT_COMMAND chaining
         if "prompt_command_hook()" in updated and (
-            "synth-shell-theme: v12_segments" not in updated
-            or "synth-shell-theme: hook_chaining" not in updated
+            "synth-shell-theme: v13_segments" not in updated
+            or "synth-shell-theme: v13_init" not in updated
+            or "synth-shell-theme: osc133_semantic" not in updated
+            or "synth-shell-theme: right_prompt" not in updated
         ):
             had_dual = "separator_char_end" in updated
             if _V11_SEGS_BLOCK_RE.search(updated):
@@ -1285,15 +1443,17 @@ def apply_runtime_patches(
             # Remove destructive DEBUG trap (replaced by PS0 reset)
             updated = _DEBUG_TRAP_RE.sub("", updated, count=1)
 
-            if "synth-shell-theme: hook_chaining" not in updated:
+            if "synth-shell-theme: v13_init" not in updated:
                 if _V11_INIT_AND_PC_RE.search(updated):
                     updated = _V11_INIT_AND_PC_RE.sub(lambda _: V12_INIT_AND_CHAINING, updated, count=1)
                 elif "\tPROMPT_COMMAND=prompt_command_hook" in updated:
                     updated = updated.replace("\tPROMPT_COMMAND=prompt_command_hook", V12_INIT_AND_CHAINING, 1)
 
-            changes.append("v12_segments")
-            changes.append("responsive_width")
-            changes.append("hook_chaining")
+            changes.append("v13_segments")
+            changes.append("osc133_semantic")
+            changes.append("right_prompt")
+            if "hook_chaining" not in changes:
+                changes.append("hook_chaining")
             if not had_dual and "dual_separator" not in changes:
                 changes.append("dual_separator")
 

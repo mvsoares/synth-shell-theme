@@ -19,7 +19,9 @@ from synth_shell_theme.core import (
     benchmark_prompt,
     detect_current_separators,
     detect_current_theme,
+    doctor_fix,
     export_preset,
+    export_static_studio,
     generate_bash_completion,
     import_preset,
     list_backups,
@@ -30,6 +32,7 @@ from synth_shell_theme.core import (
     sync_root_config,
     toggle_light_dark_theme,
 )
+from synth_shell_theme.ecosystem import import_external_theme, sync_ecosystem
 from synth_shell_theme.patches import (
     apply_runtime_patches,
     inspect_patches,
@@ -135,12 +138,16 @@ def _cmd_doctor(as_json: bool = False) -> int:
         ("git_single_pass", "Single-pass `git status --porcelain -b` (4x speedup)"),
         ("git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"),
         ("git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M) with zero extra forks"),
+        ("git_advanced_state", "Git rebase/merge/cherry-pick/bisect & worktree detection"),
         ("zero_fork_render", "Zero-fork pure-Bash segment renderer (eliminates ~20 subshells)"),
         ("dual_separator", "Independent ending separator (`separator_char_end`)"),
         ("color_256_parity", "Full 0-255 & 16-named-color parity + italic/regular effects"),
         ("truecolor_24bit", "24-bit TrueColor (#RRGGBB) with automatic 256-color fallback"),
         ("v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH, prefix, title)"),
         ("v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"),
+        ("v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT top bar + OSC 133"),
+        ("osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"),
+        ("right_prompt", "Right-aligned top bar (`right_format` + connector fill line)"),
         ("responsive_width", "Responsive compact layout on narrow tmux/VS Code splits (<90 cols)"),
         ("hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (direnv/zoxide/atuin/ble.sh safe)"),
         ("pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"),
@@ -374,8 +381,50 @@ def main(argv: list[str] | None = None) -> int:
                 description="Inspect synth-shell paths, locale, Nerd Fonts, terminal capabilities, backups & patches.",
             )
             doc_parser.add_argument("--json", action="store_true", help="Output diagnostics as JSON")
+            doc_parser.add_argument("--fix", action="store_true", help="Auto-repair CRLF endings and apply all missing runtime patches")
+            doc_parser.add_argument("--auto-ascii", action="store_true", help="With --fix, also switch to ASCII-safe if UTF-8/Nerd Fonts are missing")
             d_args = doc_parser.parse_args(rest)
+            if d_args.fix:
+                fres = doctor_fix(auto_ascii=d_args.auto_ascii)
+                if not d_args.json:
+                    actions = fres["actions"]
+                    if actions:
+                        print(f"\n  {BOLD}Doctor Auto-Fix Applied:{RESET}")
+                        for act in actions:  # type: ignore[union-attr]
+                            print(f"    \033[32;1m✓\033[0m {act}")
+                    else:
+                        print(f"\n  \033[32;1m✓\033[0m Everything is already healthy!")
             return _cmd_doctor(as_json=d_args.json)
+
+        if sub in ("import-theme", "import-palette"):
+            it_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme import-theme",
+                description="Import external color palettes (Pywal, Base16 YAML, Ghostty, Kitty, Alacritty, Windows Terminal JSON).",
+            )
+            it_parser.add_argument("source", nargs="?", default=None, help="Path to palette file (omit when using --pywal)")
+            it_parser.add_argument("--pywal", action="store_true", help="Import active colors from ~/.cache/wal/colors.json")
+            it_parser.add_argument("--name", default=None, help="Custom name for the imported theme")
+            it_parser.add_argument("--no-apply", action="store_true", help="Save to ~/.config/synth-shell/themes/ without applying immediately")
+            it_args = it_parser.parse_args(rest)
+            res_it = import_external_theme(
+                source_path=Path(it_args.source) if it_args.source else None,
+                from_pywal=it_args.pywal,
+                custom_name=it_args.name,
+                apply_now=not it_args.no_apply,
+            )
+            print(f"Imported {res_it['format']} theme '{res_it['theme']}' -> {res_it['saved_path']}")
+            return 0
+
+        if sub in ("export-web", "export-static"):
+            ew_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme export-web",
+                description="Export a standalone static HTML demo of the Web Studio (for GitHub Pages).",
+            )
+            ew_parser.add_argument("output", nargs="?", default="docs/index.html", help="Output HTML file (default: docs/index.html)")
+            ew_args = ew_parser.parse_args(rest)
+            out_html = export_static_studio(Path(ew_args.output))
+            print(f"Exported standalone static Web Studio demo to {out_html}")
+            return 0
 
         if sub in ("bench", "benchmark"):
             bench_parser = argparse.ArgumentParser(
@@ -469,7 +518,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-d", "--dual", nargs=2, metavar=("INTERNAL", "ENDING"), help="Apply independent internal and ending separators")
     parser.add_argument("--internal", metavar="SEP", help="Set internal segment separator only")
     parser.add_argument("--end", metavar="SEP", help="Set final ending separator only")
-    parser.add_argument("--format", metavar="SEGMENTS", help='Set prompt segment order (e.g. "HOST PWD GIT PYENV TF KUBE STATUS DURATION")')
+    parser.add_argument("--format", metavar="SEGMENTS", help='Set left prompt segments (e.g. "HOST PWD GIT PYENV TF KUBE")')
+    parser.add_argument("--right-format", default=None, metavar="SEGMENTS", help='Set right-aligned top bar segments (e.g. "STATUS DURATION KUBE CLOCK BATTERY", "" to clear)')
+    parser.add_argument("--right-fill", default=None, metavar="CHAR", help='Connector character between left & right prompt bars (default: "─")')
+    parser.add_argument("--osc133", dest="osc133", action="store_true", default=None, help="Enable OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)")
+    parser.add_argument("--no-osc133", dest="osc133", action="store_false", help="Disable OSC 133 semantic prompt markers")
+    parser.add_argument("--git-state", dest="git_state", action="store_true", default=None, help="Show Git rebase/merge/cherry-pick/bisect & worktree state")
+    parser.add_argument("--no-git-state", dest="git_state", action="store_false", help="Hide Git rebase/merge/worktree state")
+    parser.add_argument("--battery-threshold", type=int, default=None, metavar="PCT", help="Only show BATTERY segment at or below PCT%% (default: 100)")
+    parser.add_argument("--sync-ecosystem", action="store_true", help="Generate theme-env.sh (FZF_DEFAULT_OPTS + LS_COLORS) & tmux-theme.conf")
     parser.add_argument("--two-line", dest="two_line", action="store_true", default=None, help="Enable 2-line command prompt")
     parser.add_argument("--single-line", dest="two_line", action="store_false", help="Enable compact 1-line command prompt")
     parser.add_argument("--max-pwd", type=int, default=None, metavar="N", help="Max PWD display length (10-120)")
@@ -644,6 +701,11 @@ def main(argv: list[str] | None = None) -> int:
         x is not None
         for x in (
             args.format,
+            args.right_format,
+            args.right_fill,
+            args.osc133,
+            args.git_state,
+            args.battery_threshold,
             args.two_line,
             args.max_pwd,
             args.max_git,
@@ -666,6 +728,11 @@ def main(argv: list[str] | None = None) -> int:
     if has_layout:
         res_l = apply_layout_options(
             format_str=args.format,
+            right_format_str=args.right_format,
+            right_fill_char=args.right_fill,
+            enable_osc133=args.osc133,
+            git_show_state=args.git_state,
+            battery_threshold=args.battery_threshold,
             new_line=args.two_line,
             max_pwd_char=args.max_pwd,
             max_git_char=args.max_git,
@@ -690,6 +757,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.sync_root:
         res_root = sync_root_config(theme=chosen_theme)
         print(f"Synced root prompt config ({res_root['theme']}) -> {res_root['root_config_path']}")
+        did_non_interactive = True
+
+    if args.sync_ecosystem:
+        res_eco = sync_ecosystem(theme=chosen_theme)
+        print(f"Synced ecosystem ({res_eco['theme']}) -> {res_eco['env_script']} & {res_eco['tmux_conf']}")
         did_non_interactive = True
 
     if args.sync_greeter or args.greeter_monitors is not None or args.hide_swap:

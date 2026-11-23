@@ -78,6 +78,7 @@ SEGMENT_KEYS: tuple[str, ...] = (
     "shlvl",
     "rust",
     "go",
+    "battery",
     "input",
 )
 
@@ -102,6 +103,7 @@ DEFAULT_SEGMENT_COLORS: dict[str, tuple[str, str]] = {
     "shlvl": ("white", "99"),
     "rust": ("white", "166"),
     "go": ("black", "81"),
+    "battery": ("black", "114"),
     "input": ("white", "none"),
 }
 
