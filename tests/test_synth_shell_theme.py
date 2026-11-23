@@ -970,7 +970,7 @@ fi
                     'GS="$(getGitBranch)"; echo "GIT=$GS"; '
                     'prompt_command_hook; prompt_command_hook; '
                     '[[ "$PS1" == *"133;A"* && "$PS1" == *"133;B"* && "$PS1" == *"133;D;"* ]] && echo "OSC133_OK"; '
-                    r'''exp="${PS1@P}"; clean="${exp//$'\x1b]'/}"; [[ "$clean" != *']'* ]] && echo "NO_STRAY_BRACKET_OK"; '''
+                    r'''if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then eval 'exp="${PS1@P}"'; clean="${exp//$'\x1b]'/}"; [[ "$clean" != *']'* ]] && echo "NO_STRAY_BRACKET_OK"; else [[ "$PS1" != *'\e\\]'* ]] && echo "NO_STRAY_BRACKET_OK"; fi; '''
                     '[[ "$PS1" == *"───"* ]] && echo "RPROMPT_OK"; '
                     '[[ "$PS0" == *"133;C"* ]] && echo "PS0_C_OK"; '
                     'SAN_OUT="$(SSP_FORCE_SANITIZE=1 prompt_command_hook)"; '

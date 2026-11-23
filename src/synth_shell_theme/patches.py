@@ -348,12 +348,14 @@ _ssp_resolve_sep()
 \t\treturn
 \tfi
 \tlocal loc="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
-\tlocal loc_low="${loc,,}"
 \tif [[ "$raw" == *'\\u'* || "$raw" == *'\\U'* ]]; then
-\t\tif [[ "$loc_low" != *utf*8* ]]; then
-\t\t\t_SSP_SEP=">"
-\t\t\treturn
-\t\tfi
+\t\tcase "$loc" in
+\t\t\t*[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;;
+\t\t\t*)
+\t\t\t\t_SSP_SEP=">"
+\t\t\t\treturn
+\t\t\t\t;;
+\t\tesac
 \t\tlocal decoded=""
 \t\tprintf -v decoded '%b' "$raw"
 \t\tif [[ "$decoded" == *'\\u'* || "$decoded" == *'\\U'* || -z "$decoded" ]]; then
@@ -450,6 +452,10 @@ _ssp_has_element()
 }
 _ssp_auto_os_icon()
 {
+\tif [[ "${OSTYPE:-}" == darwin* ]]; then
+\t\t_SSP_PREFIX=" "
+\t\treturn
+\tfi
 \tlocal os_id=""
 \tif [[ -r /etc/os-release ]]; then
 \t\tlocal _line
@@ -457,18 +463,17 @@ _ssp_auto_os_icon()
 \t\t\tif [[ "$_line" == ID=* ]]; then
 \t\t\t\tos_id="${_line#ID=}"
 \t\t\t\tos_id="${os_id%\\"}" ; os_id="${os_id#\\"}"
-\t\t\t\tos_id="${os_id,,}"
 \t\t\t\tbreak
 \t\t\tfi
 \t\tdone < /etc/os-release
 \tfi
 \tcase "$os_id" in
-\t\tubuntu) _SSP_PREFIX=" " ;;
-\t\tdebian) _SSP_PREFIX=" " ;;
-\t\tarch|endeavouros|manjaro) _SSP_PREFIX=" " ;;
-\t\tfedora) _SSP_PREFIX=" " ;;
-\t\tnixos) _SSP_PREFIX=" " ;;
-\t\talpine) _SSP_PREFIX=" " ;;
+\t\t[Uu]buntu) _SSP_PREFIX=" " ;;
+\t\t[Dd]ebian) _SSP_PREFIX=" " ;;
+\t\t[Aa]rch|[Ee]ndeavouros|[Mm]anjaro) _SSP_PREFIX=" " ;;
+\t\t[Ff]edora) _SSP_PREFIX=" " ;;
+\t\t[Nn]ixos) _SSP_PREFIX=" " ;;
+\t\t[Aa]lpine) _SSP_PREFIX=" " ;;
 \t\t*) _SSP_PREFIX=" " ;;
 \tesac
 }
@@ -764,12 +769,14 @@ combine_elements()
 V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 {
 \tlocal last_exit=$?
+\tlocal _ssp_had_u=0
+\t[[ $- == *u* ]] && { _ssp_had_u=1; set +u; }
 \t# synth-shell-theme: terminal_sanitize (auto-clear leaked SSH/TUI mouse tracking & focus reporting)
 \tif [[ "${SSP_TERMINAL_SANITIZE:-true}" == "true" && -z "${BLE_VERSION:-}" ]] && [[ -t 1 || "${SSP_FORCE_SANITIZE:-}" == "1" ]]; then
 \t\tprintf '\\e[?1000l\\e[?1002l\\e[?1003l\\e[?1006l\\e[?1015l\\e[?1004l'
 \tfi
-\tlocal elements=(${SSP_ELEMENTS[@]+"${SSP_ELEMENTS[@]}"})
-\tlocal right_elements=(${SSP_RIGHT_ELEMENTS[@]+"${SSP_RIGHT_ELEMENTS[@]}"})
+\tlocal elements=("${SSP_ELEMENTS[@]}")
+\tlocal right_elements=("${SSP_RIGHT_ELEMENTS[@]}")
 \tlocal user="${USER:-}"
 \tlocal host="${HOSTNAME:-}"
 \tlocal _is_compact=0
@@ -896,6 +903,7 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tlocal input_format="$_SSP_FMT"
 \tlocal command_start_symbol="${input_format}${SSP_BASH_SYMBOL:-}"
 \tPS1="${PS1}${SSP_PROMPT_COMM_SEP:-}${SSP_NEW_LINE_LINK_BOTTOM:-}${command_start_symbol} ${input_format}${osc_post}"
+\tif (( _ssp_had_u )); then set -u; fi
 }"""
 
 V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
@@ -1218,7 +1226,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         or 'local sep_char="${6:-$separator_char}"' in content
     ) and "separator_char_end" in content
     zero_fork_render = "synth-shell-theme: zero_fork_render" in content
-    utf8_ps1_guard = "synth-shell-theme: utf8_ps1_guard" in content
+    utf8_ps1_guard = "synth-shell-theme: utf8_ps1_guard" in content and "${loc,,}" not in content
     truecolor_24bit = "synth-shell-theme: truecolor_24bit" in content
 
     has_full_hook = "prompt_command_hook()" in content
@@ -1372,7 +1380,7 @@ def apply_runtime_patches(
             changes.append("git_advanced_state")
 
         # 3. Zero-fork segment renderer + UTF-8 PS1 escape guard + TrueColor 24-bit (#RRGGBB)
-        if "synth-shell-theme: truecolor_24bit" not in updated:
+        if "synth-shell-theme: truecolor_24bit" not in updated or "${loc,,}" in updated:
             if _ZERO_FORK_BLOCK_RE.search(updated):
                 updated = _ZERO_FORK_BLOCK_RE.sub(lambda _: ZERO_FORK_V12_HELPERS, updated, count=1)
                 if _PRINT_SEG_FULL_RE.search(updated):
@@ -1433,6 +1441,8 @@ def apply_runtime_patches(
             or "synth-shell-theme: right_prompt" not in updated
             or "133;A\\e\\\\" in updated
             or "133;C\\e\\\\" in updated
+            or "${os_id,,}" in updated
+            or "_ssp_had_u" not in updated
         ):
             had_dual = "separator_char_end" in updated
             if _V11_SEGS_BLOCK_RE.search(updated):
