@@ -557,7 +557,7 @@ printMonitorRAM()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_b:
                 boot = json.loads(r_b.read().decode("utf-8"))
-                self.assertEqual(len(boot["valid_segments"]), 15)
+                self.assertEqual(len(boot["valid_segments"]), 20)
                 self.assertIn("diagnostics", boot)
                 self.assertIn("greeter", boot)
 
@@ -575,6 +575,190 @@ printMonitorRAM()
                 with urllib.request.urlopen(req) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
                     self.assertTrue(body["ok"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_v12_truecolor_hooks_segments_custom_themes_bench_and_completion(self) -> None:
+        # 1. TrueColor #RRGGBB parsing & nearest-256 fallback math
+        self.assertEqual(themes.normalize_hex_color("#7AA2F7"), "#7aa2f7")
+        self.assertEqual(themes.normalize_hex_color("#0f8"), "#00ff88")
+        self.assertEqual(themes.token_to_hex("#7aa2f7"), "#7aa2f7")
+        self.assertIsInstance(themes.color_index("#7aa2f7"), int)
+
+        # 2. Save custom TrueColor theme & verify load_themes discovers it
+        saved = themes.save_custom_theme(
+            name="Midnight Hex Test",
+            colors={
+                "font_color_host": "#ffffff",
+                "background_host": "#1a1b26",
+                "font_color_pwd": "#000000",
+                "background_pwd": "#7aa2f7",
+                "font_color_git": "#000000",
+                "background_git": "#9ece6a",
+                "font_color_input": "#bb9af7",
+                "background_input": "none",
+            },
+            config_dir=self.cfg_dir,
+        )
+        self.assertTrue(saved["custom"])
+        all_themes = themes.load_themes(config_dir=self.cfg_dir)
+        self.assertEqual(len(all_themes), 65)
+        found_custom, _ = themes.find_theme("midnight-hex-test", all_themes)
+        self.assertIsNotNone(found_custom)
+
+        # 3. Light/Dark toggle CLI & state persistence
+        core.apply_theme(themes.find_theme("tokyo-night", all_themes)[0], config_dir=self.cfg_dir)  # type: ignore[arg-type]
+        tog1 = core.toggle_light_dark_theme(config_dir=self.cfg_dir)
+        self.assertEqual(tog1["mode"], "light")
+        self.assertEqual(tog1["theme"], "Catppuccin Latte")
+        tog2 = core.toggle_light_dark_theme(config_dir=self.cfg_dir)
+        self.assertEqual(tog2["mode"], "dark")
+        self.assertEqual(tog2["theme"], "Tokyo Night")
+
+        # 4. Bash completion script syntax & contents
+        comp_buf = io.StringIO()
+        with contextlib.redirect_stdout(comp_buf):
+            rc_comp = cli.main(["completion", "bash"])
+        self.assertEqual(rc_comp, 0)
+        comp_script = comp_buf.getvalue()
+        self.assertIn("complete -F _synth_shell_theme_complete", comp_script)
+        self.assertIn("tokyo-night", comp_script)
+
+        # 5. Full v1.2 runtime patches: TrueColor, hook_chaining (no DEBUG trap), v12 segments, nounset, bench
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH + """
+getEffectCode()
+{
+\tcase $1 in
+\tdim)
+\t\techo 2
+\t\t;;
+\t*)
+\t\techo 0
+\t\t;;
+\tesac
+}
+getPyenv() { echo ""; }
+getTerraform() { echo ""; }
+shortenPath() { echo "$1"; }
+get_colors_for_element() { echo "white blue bold"; }
+prompt_command_hook() { PS1="$USER"; }
+synth_shell_prompt()
+{
+\tformat="HOST PWD GIT KUBE AWS JOBS DIRENV SHLVL RUST GO"
+\tSSP_ELEMENTS=($format "INPUT")
+\tSSP_COLORS_USER=(white blue bold)
+\tSSP_COLORS_HOST=(white 237 bold)
+\tSSP_COLORS_PWD=(black 255 bold)
+\tSSP_COLORS_GIT=(black 71 bold)
+\tSSP_COLORS_PYENV=(white 63 bold)
+\tSSP_COLORS_KUBE=(black 135 bold)
+\tSSP_COLORS_TF=(black 228 bold)
+\tSSP_COLORS_CLOCK=(white 240 bold)
+\tSSP_COLORS_INPUT=(white none bold)
+\tSSP_VERTICAL_PADDING=""
+\tSSP_NEW_LINE_LINK_TOP=""
+\tSSP_NEW_LINE_LINK_BOTTOM=""
+\tSSP_PROMPT_COMM_SEP=""
+\tSSP_BASH_SYMBOL=""
+\tSSP_MAX_PWD_CHAR=35
+\tSSP_PWD_TRUNC_SYMBOL="…"
+\tSSP_CLOCK_FORMAT="%H:%M"
+\tnone="$(tput sgr0)"
+\ttrap 'echo -ne "${none}"' DEBUG
+\tPROMPT_COMMAND=prompt_command_hook
+}
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+\texit
+elif [ -n "$( echo $- | grep i )" ]; then
+\tsynth_shell_prompt
+fi
+"""
+        prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
+        prompt_sh.write_text(full_prompt, encoding="utf-8", newline="\n")
+        res_p = patches.apply_runtime_patches(self.cfg_dir)
+        st = res_p["status"]
+        for k in ("truecolor_24bit", "git_ahead_behind_counts", "v12_segments", "responsive_width", "hook_chaining", "all_applied"):
+            self.assertTrue(st[k], msg=f"Expected {k}=True, got {st}")
+        self.assertEqual(patches.apply_runtime_patches(self.cfg_dir)["changes"], [])
+
+        if shutil.which("bash"):
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                chk_comp = subprocess.run(["bash", "-n"], input=comp_script, capture_output=True, text=True, check=False)
+                self.assertEqual(chk_comp.returncode, 0, msg=chk_comp.stderr)
+
+                stripped = "\n".join(
+                    ln for ln in prompt_sh.read_text(encoding="utf-8").splitlines()
+                    if "interactive_guard" not in ln
+                ).replace('elif [ -n "$( echo $- | grep i )" ]; then', "elif true; then")
+                runner = self.cfg_dir / "v12_runner.sh"
+                runner.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+
+                # Verify TrueColor 24-bit vs 256 fallback, PROMPT_COMMAND chaining, v12 segments & set -u safety
+                proj = self.cfg_dir / "rustgo"
+                proj.mkdir(exist_ok=True)
+                (proj / "Cargo.toml").write_text('rust-version = "1.82"\n', encoding="utf-8", newline="\n")
+                (proj / "go.mod").write_text("module example\n\ngo 1.23.1\n", encoding="utf-8", newline="\n")
+
+                cmd = (
+                    f'PROMPT_COMMAND="existing_hook"; source "{runner}"; '
+                    'echo "PC=$PROMPT_COMMAND"; '
+                    'COLORTERM=truecolor _ssp_color_var "#7aa2f7"; echo "TC=$_SSP_C"; '
+                    'COLORTERM="" _ssp_color_var "#7aa2f7"; echo "FB=$_SSP_C"; '
+                    f'cd "{proj}"; '
+                    'DIRENV_DIR="-/tmp/myapp" getDirenv; echo ""; '
+                    'IN_NIX_SHELL=pure getShlvl; echo ""; '
+                    'getRust; echo ""; '
+                    'getGo; echo ""; '
+                    'set -u; COLUMNS=70 prompt_command_hook; echo "NOUNSET_OK"'
+                )
+                r_bash = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, check=False)
+                self.assertEqual(r_bash.returncode, 0, msg=r_bash.stderr)
+                lines = r_bash.stdout.splitlines()
+                self.assertEqual(lines[0], "PC=prompt_command_hook;existing_hook")
+                self.assertEqual(lines[1], "TC=38;2;122;162;247")
+                self.assertEqual(lines[2], "FB=38;5;110")
+                self.assertEqual(lines[3], "⚡ myapp")
+                self.assertEqual(lines[4], "❄ nix")
+                self.assertEqual(lines[5], "🦀 1.82")
+                self.assertEqual(lines[6], "🐹 1.23.1")
+                self.assertEqual(lines[7], "NOUNSET_OK")
+
+                # Live prompt benchmark via CLI & API
+                bres = core.benchmark_prompt(iterations=5, config_dir=self.cfg_dir)
+                self.assertTrue(bres["ok"], msg=str(bres))
+                self.assertEqual(bres["iterations"], 5)
+
+        # 6. Web Studio v1.2 HTTP endpoints (`/api/custom-theme`, `/api/toggle-theme`, `/api/bench`)
+        httpd = server.create_studio_server("127.0.0.1", 0, config_dir=self.cfg_dir)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            req_ct = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/custom-theme",
+                data=json.dumps({
+                    "name": "Studio Neon Hex",
+                    "colors": {"background_host": "#282a36", "background_pwd": "#bd93f9", "background_git": "#50fa7b"},
+                    "apply": True,
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_ct) as r_ct:
+                body_ct = json.loads(r_ct.read().decode("utf-8"))
+                self.assertTrue(body_ct["ok"])
+                self.assertEqual(body_ct["saved_theme"], "Studio Neon Hex")
+
+            req_tog = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/toggle-theme",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_tog) as r_tog:
+                self.assertTrue(json.loads(r_tog.read().decode("utf-8"))["ok"])
         finally:
             httpd.shutdown()
             httpd.server_close()

@@ -30,7 +30,8 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
   4. **Telemetry & Cloud segments (`v11_segments`)**: Zero-fork `STATUS` (non-zero exit code), `DURATION` (`PS0` + `$EPOCHREALTIME` timer), `AWS`, `GCP`, `DOCKER`, `NODE`, and `SSH`/`CONTAINER`, plus `prompt_prefix`, `font_effect` (`bold`/`regular`/`italic`/`dim`), and OSC-0 terminal tab titles.
   5. **Accurate Virtualenv & Conda (`pyenv_enhanced`)**: Pure-Bash `$VIRTUAL_ENV_PROMPT`, `pyvenv.cfg` `prompt`, `$CONDA_DEFAULT_ENV`, parent-dir naming for `.venv`, and `--max-pyenv` truncation.
   6. **Independent Ending Separator (`dual_separator`) & 256-Color Parity (`color_256_parity`)**: Supports `separator_char_end`, 0–255 & all 16 named colors, and `italic`/`regular` text styles.
-  7. **Unicode `PS1` Guard (`utf8_ps1_guard`), Non-Interactive Safety (`interactive_guard`) & Greeter Fixes**: Prevents `\uE0B0` turning into `usernameE0B0` under `LC_ALL=C`, protects `scp`/`sftp`/`rsync`, adds `--ascii-safe`, `--sync-root`, `--sync-greeter`, plus AMD `k10temp`/`Tctl` CPU temp & ZFS ARC RAM fixes for `synth-shell-greeter`.
+  7. **Safe `PROMPT_COMMAND` Chaining & TrueColor 24-bit (`hook_chaining` / `truecolor_24bit`)**: Chains `PROMPT_COMMAND` (Bash 5.1+ arrays & strings) and moves color reset to `PS0` (no `trap DEBUG` hijacking — 100% compatible with `direnv`, `zoxide`, `atuin`, `ble.sh`, `mise`, and VS Code), supports exact `#RRGGBB` TrueColor with automatic 256-color fallback, responsive compact layout on narrow `tmux`/VS Code splits (`--compact-width`), exact Git `↑N ↓M` counts, `JOBS`/`DIRENV`/`SHLVL`/`RUST`/`GO` segments, and `set -u` safety.
+  8. **Unicode `PS1` Guard (`utf8_ps1_guard`), Non-Interactive Safety (`interactive_guard`) & Greeter Fixes**: Prevents `\uE0B0` turning into `usernameE0B0` under `LC_ALL=C`, protects `scp`/`sftp`/`rsync`, adds `--ascii-safe`, `--sync-root`, `--sync-greeter`, plus AMD `k10temp`/`Tctl` CPU temp & ZFS ARC RAM fixes for `synth-shell-greeter`.
 - **Safe Atomic Writes & Backups**: Preserves your custom layout, padding, and Git symbols when switching colors, with automatic timestamped backups in `~/.config/synth-shell/backups/` and portable JSON presets (`export` / `import`).
 
 ---
@@ -171,7 +172,12 @@ synth-shell-theme --ascii-safe
 # Root prompt & synth-shell-greeter palette/monitor sync
 synth-shell-theme --sync-root --sync-greeter --hide-swap
 
-# Health check (paths, UTF-8 locale, Nerd Fonts, patches), backups & portable presets
+# Light / Dark toggle, live prompt benchmark & Bash tab-completion
+synth-shell-theme --toggle-theme
+synth-shell-theme bench --runs 20
+eval "$(synth-shell-theme completion bash)"
+
+# Health check (paths, UTF-8 locale, TERM/TrueColor, Nerd Fonts, patches), backups & presets
 synth-shell-theme doctor
 synth-shell-theme --restore
 synth-shell-theme export my-prompt.json

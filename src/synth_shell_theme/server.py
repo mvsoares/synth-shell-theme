@@ -19,24 +19,41 @@ from synth_shell_theme.core import (
     apply_separators,
     apply_theme,
     backup_config,
+    benchmark_prompt,
     list_backups,
     read_current_state,
     read_greeter_state,
     restore_backup,
     sync_greeter_theme,
     sync_root_config,
+    toggle_light_dark_theme,
 )
 from synth_shell_theme.patches import apply_runtime_patches
-from synth_shell_theme.paths import detect_nerd_fonts, detect_utf8_locale, get_assets_dir, get_config_dir
+from synth_shell_theme.paths import (
+    detect_nerd_fonts,
+    detect_terminal_capabilities,
+    detect_utf8_locale,
+    get_assets_dir,
+    get_config_dir,
+)
 from synth_shell_theme.separators import resolve_separator_input, serialize_separators_for_web
-from synth_shell_theme.themes import BOLD, DIM, RESET, find_theme, load_themes, serialize_theme_for_web
+from synth_shell_theme.themes import (
+    BOLD,
+    DIM,
+    RESET,
+    find_theme,
+    load_themes,
+    save_custom_theme,
+    serialize_theme_for_web,
+)
 
 
 def build_bootstrap_payload(config_dir: Path | None = None) -> dict[str, object]:
     """Assemble full initial JSON state for the Web Studio frontend."""
     base = config_dir if config_dir is not None else get_config_dir()
-    themes = load_themes()
+    themes = load_themes(config_dir=base)
     serialized_themes = [serialize_theme_for_web(t, idx) for idx, t in enumerate(themes, 1)]
+    nf = detect_nerd_fonts()
     return {
         "version": __version__,
         "themes": serialized_themes,
@@ -47,7 +64,8 @@ def build_bootstrap_payload(config_dir: Path | None = None) -> dict[str, object]
         "greeter": read_greeter_state(base),
         "diagnostics": {
             "locale": detect_utf8_locale(),
-            "nerd_fonts": detect_nerd_fonts(),
+            "nerd_fonts": nf,
+            "terminal": detect_terminal_capabilities(nf),
         },
         "backups": list_backups(base),
     }
@@ -112,6 +130,11 @@ def handle_apply_payload(
         "max_git_char",
         "max_pyenv_char",
         "max_kube_char",
+        "compact_width",
+        "git_show_counts",
+        "transient_prompt",
+        "light_theme",
+        "dark_theme",
         "prompt_prefix",
         "font_effect",
         "enable_terminal_title",
@@ -137,6 +160,11 @@ def handle_apply_payload(
             max_git_char=int(payload["max_git_char"]) if "max_git_char" in payload else None,  # type: ignore[arg-type]
             max_pyenv_char=int(payload["max_pyenv_char"]) if "max_pyenv_char" in payload else None,  # type: ignore[arg-type]
             max_kube_char=int(payload["max_kube_char"]) if "max_kube_char" in payload else None,  # type: ignore[arg-type]
+            compact_width=int(payload["compact_width"]) if "compact_width" in payload else None,  # type: ignore[arg-type]
+            git_show_counts=bool(payload["git_show_counts"]) if "git_show_counts" in payload else None,
+            transient_prompt=bool(payload["transient_prompt"]) if "transient_prompt" in payload else None,
+            light_theme=str(payload["light_theme"]) if "light_theme" in payload else None,
+            dark_theme=str(payload["dark_theme"]) if "dark_theme" in payload else None,
             prompt_prefix=str(payload["prompt_prefix"]) if "prompt_prefix" in payload else None,
             font_effect=str(payload["font_effect"]) if "font_effect" in payload else None,
             enable_terminal_title=bool(payload["enable_terminal_title"]) if "enable_terminal_title" in payload else None,
@@ -282,7 +310,7 @@ def create_studio_server(
                         hide_swap_if_unavailable=hide_swap,
                         config_dir=config_dir,
                     )
-                    themes = load_themes()
+                    themes = load_themes(config_dir=config_dir)
                     self._send_json(
                         {
                             "ok": True,
@@ -292,6 +320,53 @@ def create_studio_server(
                             "backups": list_backups(config_dir),
                         }
                     )
+                    return
+                if route == "/api/custom-theme":
+                    name = str(body.get("name", "")).strip()
+                    colors_raw = body.get("colors", {})
+                    if not isinstance(colors_raw, dict):
+                        raise ValueError("Expected 'colors' object.")
+                    clean_colors = {str(k): str(v) for k, v in colors_raw.items()}
+                    saved = save_custom_theme(
+                        name=name,
+                        colors=clean_colors,
+                        description=str(body.get("description", "")),
+                        badge=str(body.get("badge", "Custom")),
+                        config_dir=config_dir,
+                    )
+                    if body.get("apply", True):
+                        apply_theme(saved, config_dir=config_dir)
+                    themes = load_themes(config_dir=config_dir)
+                    serialized_themes = [serialize_theme_for_web(t, idx) for idx, t in enumerate(themes, 1)]
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "saved_theme": saved["name"],
+                            "themes": serialized_themes,
+                            "state": read_current_state(themes, config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/toggle-theme":
+                    res_t = toggle_light_dark_theme(
+                        light_slug=str(body["light_theme"]) if body.get("light_theme") else None,
+                        dark_slug=str(body["dark_theme"]) if body.get("dark_theme") else None,
+                        config_dir=config_dir,
+                    )
+                    themes = load_themes(config_dir=config_dir)
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_t,
+                            "state": read_current_state(themes, config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/bench":
+                    runs = int(body.get("iterations", 12))  # type: ignore[arg-type]
+                    self._send_json(benchmark_prompt(iterations=runs, config_dir=config_dir))
                     return
                 if route == "/api/restore":
                     target = body.get("target", 1)

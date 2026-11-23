@@ -124,9 +124,42 @@ def get_themes_dir() -> Path:
     return get_package_dir() / "themes"
 
 
+def get_user_themes_dir(config_dir: Path | None = None) -> Path:
+    """Return the user custom themes directory (`~/.config/synth-shell/themes`)."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    return base / "themes"
+
+
 def get_assets_dir() -> Path:
     """Return the bundled `assets/` directory containing `studio.html`."""
     return get_package_dir() / "assets"
+
+
+def detect_terminal_capabilities(nerd_fonts: dict[str, object] | None = None) -> dict[str, object]:
+    """Inspect TERM, COLORTERM (24-bit TrueColor), TERM_PROGRAM (VS Code), tmux, and ble.sh."""
+    term = os.environ.get("TERM", "")
+    colorterm = os.environ.get("COLORTERM", "")
+    term_program = os.environ.get("TERM_PROGRAM", "")
+    in_tmux = bool(os.environ.get("TMUX"))
+    truecolor = colorterm.lower() in ("truecolor", "24bit")
+    term_256 = "256color" in term.lower() or "truecolor" in term.lower() or truecolor
+    blesh_installed = bool(os.environ.get("BLE_VERSION")) or (Path.home() / ".local" / "share" / "blesh" / "ble.sh").is_file()
+
+    nf = nerd_fonts if nerd_fonts is not None else detect_nerd_fonts()
+    samples = list(nf.get("samples", [])) if isinstance(nf, dict) else []  # type: ignore[arg-type]
+    rec_font = str(samples[0]) if samples else "CaskaydiaCove Nerd Font"
+
+    return {
+        "term": term or "unset",
+        "colorterm": colorterm or "unset",
+        "truecolor": truecolor,
+        "term_256": term_256,
+        "term_program": term_program or "unknown",
+        "is_vscode": term_program.lower() == "vscode",
+        "in_tmux": in_tmux,
+        "blesh_detected": blesh_installed,
+        "vscode_font_setting": f'"terminal.integrated.fontFamily": "{rec_font}"',
+    }
 
 
 def detect_utf8_locale() -> dict[str, object]:
@@ -243,6 +276,7 @@ def system_summary(config_dir: Path | None = None) -> dict[str, object]:
     bdir = get_backup_dir(base)
     backups = sorted(bdir.glob("synth-shell-prompt.config.*.bak")) if bdir.is_dir() else []
 
+    nf = detect_nerd_fonts()
     return {
         "os": detect_os(),
         "platform": platform.platform(),
@@ -263,7 +297,10 @@ def system_summary(config_dir: Path | None = None) -> dict[str, object]:
         "bash_found": shutil.which("bash") is not None,
         "git_found": shutil.which("git") is not None,
         "themes_dir": str(get_themes_dir()),
+        "user_themes_dir": str(get_user_themes_dir(base)),
         "bundled_themes": len(list(get_themes_dir().glob("*.conf"))),
+        "custom_themes": len(list(get_user_themes_dir(base).glob("*.conf"))) if get_user_themes_dir(base).is_dir() else 0,
         "locale": detect_utf8_locale(),
-        "nerd_fonts": detect_nerd_fonts(),
+        "nerd_fonts": nf,
+        "terminal": detect_terminal_capabilities(nf),
     }

@@ -576,6 +576,7 @@
         <h1>Synth-Shell Theme Studio</h1>
       </div>
       <div class="top-actions">
+        <button id="btn-toggle-theme" title="Toggle between Light and Dark theme pair">☀ / ☾ Light·Dark</button>
         <button id="btn-copy-reload" title="Copy Bash reload command">Copy Reload Cmd</button>
         <button id="btn-undo" title="Restore latest configuration backup">Undo / Restore</button>
         <button class="primary" id="btn-apply-active">Apply Studio Selection</button>
@@ -616,8 +617,27 @@
     <!-- TAB 1: 64 Themes -->
     <section class="tab-panel active" id="tab-themes">
       <div class="toolbar">
-        <input type="search" id="theme-search" placeholder="Search 64 themes by name, slug, or style…" />
+        <input type="search" id="theme-search" placeholder="Search themes by name, slug, or style…" />
         <span id="theme-count-label" style="font-size:13px;color:var(--muted);">64 themes</span>
+        <button id="btn-toggle-creator" style="margin-left:auto;">+ Create Custom TrueColor Theme</button>
+      </div>
+      <div class="panel-box" id="custom-theme-creator" style="display:none;margin-bottom:16px;">
+        <h3>Custom Theme Creator (24-bit TrueColor <code>#RRGGBB</code> + 256-color fallback)</h3>
+        <p>Pick exact hex colors for each segment and save to <code>~/.config/synth-shell/themes/</code>.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;">
+          <input type="text" id="ct-name" placeholder="Theme Name (e.g. My Midnight)" style="min-width:220px;" />
+          <input type="text" id="ct-desc" placeholder="Short description…" style="min-width:260px;" />
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <label class="toggle-label"><span>Host BG</span><input type="color" id="ct-bg-host" value="#3b4261" /></label>
+          <label class="toggle-label"><span>PWD BG</span><input type="color" id="ct-bg-pwd" value="#7aa2f7" /></label>
+          <label class="toggle-label"><span>Git BG</span><input type="color" id="ct-bg-git" value="#9ece6a" /></label>
+          <label class="toggle-label"><span>Pyenv BG</span><input type="color" id="ct-bg-pyenv" value="#bb9af7" /></label>
+          <label class="toggle-label"><span>TF BG</span><input type="color" id="ct-bg-tf" value="#e0af68" /></label>
+          <label class="toggle-label"><span>Kube BG</span><input type="color" id="ct-bg-kube" value="#7dcfff" /></label>
+          <label class="toggle-label"><span>Input FG</span><input type="color" id="ct-fg-input" value="#7aa2f7" /></label>
+        </div>
+        <button class="primary" id="btn-save-custom-theme">Save &amp; Apply Custom Theme</button>
       </div>
       <div class="badge-bar" id="badge-filter-bar"></div>
       <div class="theme-grid" id="theme-grid"></div>
@@ -694,6 +714,18 @@
               <span>Max Kube (<code id="lbl-max-kube">28</code>):</span>
               <input type="range" id="rng-max-kube" min="10" max="60" value="28" style="width:150px;" />
             </label>
+            <label class="toggle-label">
+              <span>Compact split width (<code id="lbl-compact-width">90</code> cols, 0=off):</span>
+              <input type="range" id="rng-compact-width" min="0" max="150" value="90" style="width:150px;" />
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-git-counts" checked />
+              <span>Show exact Git ahead/behind counts (<code>↑2 ↓1</code>)</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-transient" />
+              <span>Enable <code>ble.sh</code> transient prompt when loaded</span>
+            </label>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="primary" id="btn-save-layout">Save Layout Settings</button>
@@ -759,9 +791,13 @@
         </div>
 
         <div class="panel-box">
-          <h3>Environment &amp; Font Diagnostics</h3>
-          <p>UTF-8 locale and Powerline/Nerd Font readiness for seamless glyph rendering.</p>
+          <h3>Environment, Terminal &amp; Live Benchmark</h3>
+          <p>UTF-8 locale, 24-bit TrueColor, Nerd Font readiness, and live Bash prompt latency.</p>
           <div id="diagnostics-list"></div>
+          <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <button class="primary" id="btn-run-bench">Run Live Prompt Benchmark</button>
+            <span id="bench-result" style="font-family:var(--mono);font-size:12px;color:var(--muted);"></span>
+          </div>
         </div>
       </div>
     </section>
@@ -785,6 +821,9 @@
       maxGitChar: 0,
       maxPyenvChar: 0,
       maxKubeChar: 28,
+      compactWidth: 90,
+      gitShowCounts: true,
+      transientPrompt: false,
       promptPrefix: "",
       fontEffect: "bold",
       enableTerminalTitle: true,
@@ -818,7 +857,12 @@
       gcp: "GCP:my-proj",
       docker: "🐳 prod",
       node: "⬢ v22.11",
-      ssh: "⇄ ssh"
+      ssh: "⇄ ssh",
+      jobs: "⚙ 1",
+      direnv: "⚡ app",
+      shlvl: "↳ L2",
+      rust: "🦀 1.82",
+      go: "🐹 1.23"
     };
 
     function escapeHtml(str) {
@@ -1085,6 +1129,10 @@
       document.getElementById("lbl-max-pyenv").textContent = state.maxPyenvChar;
       document.getElementById("rng-max-kube").value = state.maxKubeChar;
       document.getElementById("lbl-max-kube").textContent = state.maxKubeChar;
+      document.getElementById("rng-compact-width").value = state.compactWidth;
+      document.getElementById("lbl-compact-width").textContent = state.compactWidth;
+      document.getElementById("chk-git-counts").checked = state.gitShowCounts;
+      document.getElementById("chk-transient").checked = state.transientPrompt;
       document.getElementById("chk-wsl-fast").checked = state.gitSkipUntracked;
       document.getElementById("chk-async-git").checked = state.gitAsyncCache;
       document.getElementById("inp-git-timeout").value = state.gitTimeoutMs;
@@ -1094,10 +1142,15 @@
         ["kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"],
         ["git_single_pass", "Single-pass git status check (4x faster prompt)"],
         ["git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"],
+        ["git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M)"],
         ["zero_fork_render", "Zero-fork pure-Bash segment renderer (~20 fewer subshells)"],
         ["dual_separator", "Independent ending separator (separator_char_end)"],
         ["color_256_parity", "Full 256-color & named-color parity + italic/regular effects"],
+        ["truecolor_24bit", "24-bit TrueColor (#RRGGBB) with 256-color fallback"],
         ["v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH)"],
+        ["v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"],
+        ["responsive_width", "Responsive compact prompt on narrow tmux/VS Code splits"],
+        ["hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (no DEBUG trap conflict)"],
         ["pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"],
         ["utf8_ps1_guard", "UTF-8 PS1 escape guard (prevents \\uE0B0 username bug)"],
         ["interactive_guard", "Non-interactive shell safety guard (scp/sftp/rsync safe)"]
@@ -1159,11 +1212,16 @@
       const dList = document.getElementById("diagnostics-list");
       const loc = (state.diagnostics && state.diagnostics.locale) || {};
       const nf = (state.diagnostics && state.diagnostics.nerd_fonts) || {};
+      const term = (state.diagnostics && state.diagnostics.terminal) || {};
       const samples = Array.isArray(nf.samples) && nf.samples.length ? ` (${nf.samples.slice(0, 3).join(", ")})` : "";
       dList.innerHTML = `
         <div class="patch-item">
           <span>UTF-8 Locale (${escapeHtml(loc.effective || "unknown")})</span>
           <span class="${loc.utf8 ? "status-ok" : "status-warn"}">${loc.utf8 ? "✓ UTF-8" : "NON-UTF8"}</span>
+        </div>
+        <div class="patch-item">
+          <span>Terminal Color (${escapeHtml(term.term || "unknown")} / ${escapeHtml(term.colorterm || "unset")})</span>
+          <span class="${term.truecolor ? "status-ok" : "status-warn"}">${term.truecolor ? "✓ 24-BIT TRUECOLOR" : (term.term_256 ? "256-COLOR" : "BASIC")}</span>
         </div>
         <div class="patch-item">
           <span>Nerd / Powerline Fonts${escapeHtml(samples)}</span>
@@ -1196,6 +1254,9 @@
       state.maxGitChar = Number(srvState.max_git_char || 0);
       state.maxPyenvChar = Number(srvState.max_pyenv_char || 0);
       state.maxKubeChar = Number(srvState.max_kube_char || 28);
+      state.compactWidth = Number(srvState.compact_width ?? 90);
+      state.gitShowCounts = srvState.git_show_counts !== false;
+      state.transientPrompt = Boolean(srvState.transient_prompt);
       state.promptPrefix = String(srvState.prompt_prefix || "");
       state.fontEffect = String(srvState.font_effect || "bold");
       state.enableTerminalTitle = srvState.enable_terminal_title !== false;
@@ -1348,6 +1409,89 @@
       document.getElementById("lbl-max-kube").textContent = state.maxKubeChar;
     });
 
+    document.getElementById("rng-compact-width").addEventListener("input", e => {
+      state.compactWidth = Number(e.target.value);
+      document.getElementById("lbl-compact-width").textContent = state.compactWidth;
+    });
+
+    document.getElementById("chk-git-counts").addEventListener("change", e => {
+      state.gitShowCounts = e.target.checked;
+    });
+
+    document.getElementById("chk-transient").addEventListener("change", e => {
+      state.transientPrompt = e.target.checked;
+    });
+
+    document.getElementById("btn-toggle-theme").addEventListener("click", async () => {
+      const resp = await fetch("/api/toggle-theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups);
+        showToast(`Switched to ${data.result.mode} theme: ${data.result.theme}`);
+      }
+    });
+
+    document.getElementById("btn-toggle-creator").addEventListener("click", () => {
+      const box = document.getElementById("custom-theme-creator");
+      box.style.display = box.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("btn-save-custom-theme").addEventListener("click", async () => {
+      const name = document.getElementById("ct-name").value.trim() || "My TrueColor Theme";
+      const description = document.getElementById("ct-desc").value.trim();
+      const colors = {
+        font_color_host: "white",
+        background_host: document.getElementById("ct-bg-host").value,
+        font_color_pwd: "black",
+        background_pwd: document.getElementById("ct-bg-pwd").value,
+        font_color_git: "black",
+        background_git: document.getElementById("ct-bg-git").value,
+        font_color_pyenv: "black",
+        background_pyenv: document.getElementById("ct-bg-pyenv").value,
+        font_color_tf: "black",
+        background_tf: document.getElementById("ct-bg-tf").value,
+        font_color_kube: "black",
+        background_kube: document.getElementById("ct-bg-kube").value,
+        font_color_input: document.getElementById("ct-fg-input").value,
+        background_input: "none"
+      };
+      const resp = await fetch("/api/custom-theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description, colors, apply: true })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        if (Array.isArray(data.themes)) state.themes = data.themes;
+        renderBadges();
+        syncFromServerState(data.state, data.backups);
+        document.getElementById("custom-theme-creator").style.display = "none";
+        showToast(`Saved & applied custom TrueColor theme: ${data.saved_theme}`);
+      } else {
+        showToast(`Error: ${data.error || "Failed to save theme"}`);
+      }
+    });
+
+    document.getElementById("btn-run-bench").addEventListener("click", async () => {
+      const out = document.getElementById("bench-result");
+      out.textContent = "Benchmarking…";
+      const resp = await fetch("/api/bench", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ iterations: 12 })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        out.textContent = `p50: ${data.p50_ms} ms · p95: ${data.p95_ms} ms · min: ${data.min_ms} ms (${data.iterations} runs)`;
+      } else {
+        out.textContent = data.error || "Benchmark unavailable";
+      }
+    });
+
     document.getElementById("inp-prefix").addEventListener("input", e => {
       state.promptPrefix = e.target.value;
       renderWorkbench();
@@ -1379,6 +1523,9 @@
         max_git_char: state.maxGitChar,
         max_pyenv_char: state.maxPyenvChar,
         max_kube_char: state.maxKubeChar,
+        compact_width: state.compactWidth,
+        git_show_counts: state.gitShowCounts,
+        transient_prompt: state.transientPrompt,
         prompt_prefix: state.promptPrefix,
         font_effect: state.fontEffect,
         enable_terminal_title: state.enableTerminalTitle,

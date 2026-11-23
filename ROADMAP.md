@@ -120,3 +120,18 @@ All 16 community enhancements across Phases 1–5 have been implemented in **`v1
     - **Plan:**
       - Add `--sync-greeter` (and a Web Studio **Greeter** tab) to synchronize the active prompt theme's 256-color accents to `synth-shell-greeter`'s ASCII logo and usage bars.
       - Provide 1-click toggles for which system rows `status.sh` prints (e.g., hiding `SWAP: N/A` on cloud VMs) plus optional runtime fixes for AMD `k10temp`/`Tctl` CPU sensors and ZFS ARC memory accounting.
+
+---
+
+## Implemented in `v1.2.0` (Modern Shell Interop, TrueColor & Studio Expansion) ✅
+
+17. **[x] Safe `PROMPT_COMMAND` Chaining & Removal of `trap DEBUG` (`hook_chaining`)** — Preserves `direnv`, `zoxide`, `atuin`, `ble.sh`, `mise`, and VS Code Shell Integration (`OSC 633`) by chaining `PROMPT_COMMAND` (Bash 5.1+ array & legacy string) and moving input color reset (`\e[0m`) into `PS0`.
+18. **[x] 24-Bit TrueColor (`#RRGGBB`) with Automatic 256-Color Fallback (`truecolor_24bit`)** — Native `38;2;R;G;B` / `48;2;R;G;B` in pure Bash when `COLORTERM=truecolor|24bit` with zero-fork nearest-256 fallback.
+19. **[x] Responsive Compact Width (`--compact-width`, default `90` cols)** — Automatically hides secondary segments and shortens `PWD` in narrow `tmux` / VS Code split panes.
+20. **[x] Exact Git Ahead/Behind Counters (`↑N ↓M`)** — Zero-fork extraction from `git status --porcelain -b` (`--git-counts` / `--no-git-counts`).
+21. **[x] New Zero-Fork Context Segments (`JOBS`, `DIRENV`, `SHLVL`/`NIX`, `RUST`, `GO`) & `set -u` (`nounset`) Safety** — Full 20-segment catalog safe under strict `set -u` shells.
+22. **[x] Optional `ble.sh` Transient Prompt Integration (`--transient`)** — Enables `bleopt prompt_ps1_transient=trim` automatically when `ble.sh` is loaded.
+23. **[x] Live Prompt Benchmark (`synth-shell-theme bench` + Web Studio button)** — Measures real `prompt_command_hook` latency (`min` / `p50` / `p95` / `max` ms).
+24. **[x] Custom TrueColor Theme Creator in Web Studio (`~/.config/synth-shell/themes/`)** — Pick `#RRGGBB` colors per segment, save custom `.conf` themes, and browse them alongside the 64 bundled palettes.
+25. **[x] 1-Click Light / Dark Theme Toggle (`--toggle-theme`, `--light-theme`, `--dark-theme`)** — Instant day/night switching in CLI and Web Studio.
+26. **[x] Bash Tab-Completion (`synth-shell-theme completion bash`) & VS Code / `TERM` / `COLORTERM` Diagnostics in `doctor`**.

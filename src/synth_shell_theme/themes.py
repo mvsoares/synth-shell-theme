@@ -6,7 +6,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from synth_shell_theme.paths import get_themes_dir
+from synth_shell_theme.paths import get_themes_dir, get_user_themes_dir
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -73,6 +73,11 @@ SEGMENT_KEYS: tuple[str, ...] = (
     "docker",
     "node",
     "ssh",
+    "jobs",
+    "direnv",
+    "shlvl",
+    "rust",
+    "go",
     "input",
 )
 
@@ -92,12 +97,58 @@ DEFAULT_SEGMENT_COLORS: dict[str, tuple[str, str]] = {
     "docker": ("white", "39"),
     "node": ("black", "76"),
     "ssh": ("white", "125"),
+    "jobs": ("black", "214"),
+    "direnv": ("black", "114"),
+    "shlvl": ("white", "99"),
+    "rust": ("white", "166"),
+    "go": ("black", "81"),
     "input": ("white", "none"),
 }
 
+_HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$")
+
+
+def normalize_hex_color(token: str | int | None) -> str | None:
+    """Return normalized `#rrggbb` lowercase hex string if `token` is a hex color, else None."""
+    if not isinstance(token, str):
+        return None
+    clean = token.strip().strip('"').strip("'")
+    m = _HEX_COLOR_RE.match(clean)
+    if not m:
+        return None
+    raw = m.group(1).lower()
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    return f"#{raw}"
+
+
+def hex_to_nearest_256(hex_color: str) -> int:
+    """Map a `#rrggbb` TrueColor hex string to the nearest xterm-256 index (16..255)."""
+    norm = normalize_hex_color(hex_color)
+    if not norm:
+        return 15
+    r = int(norm[1:3], 16)
+    g = int(norm[3:5], 16)
+    b = int(norm[5:7], 16)
+
+    best_idx = 16
+    best_dist = 10**9
+    for idx in range(16, 256):
+        hx = index_to_hex(idx)
+        if not hx:
+            continue
+        cr = int(hx[1:3], 16)
+        cg = int(hx[3:5], 16)
+        cb = int(hx[5:7], 16)
+        dist = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
+        if dist < best_dist:
+            best_dist = dist
+            best_idx = idx
+    return best_idx
+
 
 def color_index(token: str | int | None) -> int | None:
-    """Resolve a synth-shell color token (0-255 or named color) to an xterm-256 index, or None for transparent."""
+    """Resolve a synth-shell color token (0-255, named color, or #rrggbb) to an xterm-256 index."""
     if token is None:
         return None
     if isinstance(token, int):
@@ -105,6 +156,9 @@ def color_index(token: str | int | None) -> int | None:
     clean = str(token).strip().strip('"').strip("'").lower()
     if clean in ("none", "transparent", "default", ""):
         return None
+    hx = normalize_hex_color(clean)
+    if hx:
+        return hex_to_nearest_256(hx)
     if clean in NAMED_COLORS:
         return NAMED_COLORS[clean]
     try:
@@ -133,7 +187,10 @@ def index_to_hex(idx: int | None) -> str | None:
 
 
 def token_to_hex(token: str | int | None, fallback: str | None = None) -> str | None:
-    """Resolve any synth-shell color token directly to `#rrggbb` (or `fallback` when transparent)."""
+    """Resolve any synth-shell color token (including #rrggbb TrueColor) directly to `#rrggbb`."""
+    hx = normalize_hex_color(token)
+    if hx:
+        return hx
     idx = color_index(token)
     if idx is None:
         return fallback
@@ -223,8 +280,12 @@ def parse_theme(path: Path) -> dict[str, object]:
     return data
 
 
-def load_themes(themes_dir: Path | None = None) -> list[dict[str, object]]:
-    """Load all bundled `.conf` themes sorted by filename."""
+def load_themes(
+    themes_dir: Path | None = None,
+    include_user_themes: bool = True,
+    config_dir: Path | None = None,
+) -> list[dict[str, object]]:
+    """Load all bundled `.conf` themes plus any user-created custom themes in `~/.config/synth-shell/themes/`."""
     directory = themes_dir if themes_dir is not None else get_themes_dir()
     if not directory.is_dir():
         raise FileNotFoundError(f"Themes directory not found: {directory}")
@@ -233,9 +294,69 @@ def load_themes(themes_dir: Path | None = None) -> list[dict[str, object]]:
         raise FileNotFoundError(f"No .conf theme files found in: {directory}")
     themes = [parse_theme(f) for f in files]
     for idx, t in enumerate(themes, 1):
+        t["custom"] = False
         if not t.get("id"):
             t["id"] = idx
+
+    if include_user_themes and themes_dir is None:
+        user_dir = get_user_themes_dir(config_dir)
+        if user_dir.is_dir():
+            for uf in sorted(user_dir.glob("*.conf")):
+                ut = parse_theme(uf)
+                ut["custom"] = True
+                ut["id"] = len(themes) + 1
+                themes.append(ut)
+
     return themes
+
+
+def save_custom_theme(
+    name: str,
+    colors: dict[str, str],
+    description: str = "",
+    badge: str = "Custom",
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Save a custom theme (supporting 256-color and #RRGGBB TrueColor) into `~/.config/synth-shell/themes/`."""
+    clean_name = name.strip()
+    if not clean_name:
+        raise ValueError("Theme name cannot be empty.")
+    slug = re.sub(r"[^a-z0-9]+", "-", clean_name.lower()).strip("-") or "custom-theme"
+    user_dir = get_user_themes_dir(config_dir)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    dest = user_dir / f"{slug}.conf"
+
+    h_idx = color_index(colors.get("background_host", "237")) or 237
+    p_idx = color_index(colors.get("background_pwd", "255")) or 255
+    g_idx = color_index(colors.get("background_git", "71")) or 71
+
+    lines = [
+        f"# Theme 0: {clean_name}",
+        f"# swatch256: {h_idx} {p_idx} {g_idx}",
+        f"# badge: {badge.strip() or 'Custom'}",
+        f"# description: {description.strip() or 'Custom user theme created in Synth-Shell Theme Studio.'}",
+        'format="HOST PWD GIT PYENV TF KUBE"',
+        'separator_char="\\uE0B4"',
+        'separator_char_end="\\uE0B0"',
+        'enable_vertical_padding="true"',
+        'enable_command_on_new_line="true"',
+        "",
+    ]
+    for seg in SEGMENT_KEYS:
+        def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
+        fg_k = f"font_color_{seg}"
+        bg_k = f"background_{seg}"
+        fg_val = str(colors.get(fg_k, def_fg)).strip() or def_fg
+        bg_val = str(colors.get(bg_k, def_bg)).strip() or def_bg
+        if fg_k in colors or seg in ("host", "pwd", "git", "pyenv", "tf", "kube", "input"):
+            lines.append(f'{fg_k}="{fg_val}"')
+        if bg_k in colors or seg in ("host", "pwd", "git", "pyenv", "tf", "kube", "input"):
+            lines.append(f'{bg_k}="{bg_val}"')
+
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    parsed = parse_theme(dest)
+    parsed["custom"] = True
+    return parsed
 
 
 def find_theme(

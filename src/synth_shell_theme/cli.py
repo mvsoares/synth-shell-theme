@@ -16,9 +16,11 @@ from synth_shell_theme.core import (
     apply_separators,
     apply_theme,
     backup_config,
+    benchmark_prompt,
     detect_current_separators,
     detect_current_theme,
     export_preset,
+    generate_bash_completion,
     import_preset,
     list_backups,
     read_current_state,
@@ -26,6 +28,7 @@ from synth_shell_theme.core import (
     restore_backup,
     sync_greeter_theme,
     sync_root_config,
+    toggle_light_dark_theme,
 )
 from synth_shell_theme.patches import (
     apply_runtime_patches,
@@ -80,14 +83,19 @@ def _cmd_doctor(as_json: bool = False) -> int:
 
     loc = summary.get("locale", {})
     nf = summary.get("nerd_fonts", {})
+    term = summary.get("terminal", {})
     loc_ok = bool(isinstance(loc, dict) and loc.get("utf8"))
     nf_ok = bool(isinstance(nf, dict) and nf.get("detected"))
+    tc_ok = bool(isinstance(term, dict) and term.get("truecolor"))
+    t256_ok = bool(isinstance(term, dict) and term.get("term_256"))
 
     print()
     print(f"  {BOLD}Synth-Shell Theme Doctor{RESET} (v{__version__})")
     print(f"  {DIM}{'─' * 62}{RESET}")
     print(f"  OS / Python:      {summary['os']} ({summary['python']})")
-    print(f"  Bundled themes:   {summary['bundled_themes']} themes + {len(ALL_PRESETS)} separator presets")
+    custom_cnt = int(summary.get("custom_themes", 0) or 0)
+    custom_note = f" + {custom_cnt} custom" if custom_cnt else ""
+    print(f"  Bundled themes:   {summary['bundled_themes']} themes{custom_note} + {len(ALL_PRESETS)} separator presets")
     print(f"  Config file:      {summary['config_path']} [{ok_tag if summary['config_exists'] else warn_tag}]")
     print(f"  Root config:      {summary['root_config_path']} [{ok_tag if summary['root_config_exists'] else opt_tag}]")
     print(f"  Prompt script:    {summary['prompt_script_path']} [{ok_tag if summary['prompt_script_exists'] else warn_tag}]")
@@ -104,6 +112,16 @@ def _cmd_doctor(as_json: bool = False) -> int:
         f"  UTF-8 Locale:     {loc.get('effective', 'unknown') if isinstance(loc, dict) else 'unknown'} "
         f"[{ok_tag if loc_ok else warn_tag}]"
     )
+    if isinstance(term, dict):
+        color_mode = "24-bit TrueColor" if tc_ok else ("256-color" if t256_ok else "basic")
+        print(
+            f"  Terminal / Color: TERM={term.get('term')}  COLORTERM={term.get('colorterm')}  "
+            f"({color_mode}) [{ok_tag if t256_ok else warn_tag}]"
+        )
+        if term.get("blesh_detected"):
+            print(f"  ble.sh detected:  yes (tip: enable transient prompt with `--transient`)")
+        if term.get("is_vscode"):
+            print(f"  VS Code font tip: {term.get('vscode_font_setting')}")
     if nf_ok and isinstance(nf, dict):
         samples = ", ".join(str(x) for x in list(nf.get("samples", []))[:3])  # type: ignore[arg-type]
         print(f"  Nerd/PL Fonts:    {nf.get('count', 0)} found ({samples}) [{ok_tag}]")
@@ -116,10 +134,15 @@ def _cmd_doctor(as_json: bool = False) -> int:
         ("kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"),
         ("git_single_pass", "Single-pass `git status --porcelain -b` (4x speedup)"),
         ("git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"),
+        ("git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M) with zero extra forks"),
         ("zero_fork_render", "Zero-fork pure-Bash segment renderer (eliminates ~20 subshells)"),
         ("dual_separator", "Independent ending separator (`separator_char_end`)"),
         ("color_256_parity", "Full 0-255 & 16-named-color parity + italic/regular effects"),
+        ("truecolor_24bit", "24-bit TrueColor (#RRGGBB) with automatic 256-color fallback"),
         ("v11_segments", "v1.1 segments (STATUS, DURATION, AWS, GCP, DOCKER, NODE, SSH, prefix, title)"),
+        ("v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"),
+        ("responsive_width", "Responsive compact layout on narrow tmux/VS Code splits (<90 cols)"),
+        ("hook_chaining", "Safe PROMPT_COMMAND chaining + PS0 reset (direnv/zoxide/atuin/ble.sh safe)"),
         ("pyenv_enhanced", "Pure-Bash VIRTUAL_ENV_PROMPT / pyvenv.cfg / Conda + max_pyenv_char"),
         ("utf8_ps1_guard", "UTF-8 PS1 escape guard (fixes \\uE0B0 username bug under LC_ALL=C)"),
         ("interactive_guard", "Non-interactive shell safety guard (`scp`/`sftp`/`rsync` safe)"),
@@ -348,11 +371,46 @@ def main(argv: list[str] | None = None) -> int:
         if sub == "doctor":
             doc_parser = argparse.ArgumentParser(
                 prog="synth-shell-theme doctor",
-                description="Inspect synth-shell paths, locale, Nerd Fonts, backups, and runtime patches.",
+                description="Inspect synth-shell paths, locale, Nerd Fonts, terminal capabilities, backups & patches.",
             )
             doc_parser.add_argument("--json", action="store_true", help="Output diagnostics as JSON")
             d_args = doc_parser.parse_args(rest)
             return _cmd_doctor(as_json=d_args.json)
+
+        if sub in ("bench", "benchmark"):
+            bench_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme bench",
+                description="Benchmark live Bash prompt_command_hook rendering latency (p50 / p95 in ms).",
+            )
+            bench_parser.add_argument("-n", "--runs", type=int, default=15, help="Number of prompt iterations (default: 15)")
+            bench_parser.add_argument("--json", action="store_true", help="Output benchmark metrics as JSON")
+            b_args = bench_parser.parse_args(rest)
+            bres = benchmark_prompt(iterations=b_args.runs)
+            if b_args.json:
+                print(json.dumps(bres, indent=2, ensure_ascii=False))
+                return 0 if bres.get("ok") else 1
+            if not bres.get("ok"):
+                print(f"Benchmark error: {bres.get('error')}", file=sys.stderr)
+                return 1
+            print()
+            print(f"  {BOLD}Synth-Shell Prompt Benchmark{RESET} ({bres['iterations']} runs in {bres['cwd']})")
+            print(f"  {DIM}{'─' * 56}{RESET}")
+            print(f"  Min:    \033[32;1m{bres['min_ms']} ms\033[0m")
+            print(f"  Median: \033[36;1m{bres['p50_ms']} ms\033[0m (p50)")
+            print(f"  p95:    \033[33;1m{bres['p95_ms']} ms\033[0m")
+            print(f"  Max:    {bres['max_ms']} ms")
+            print()
+            return 0
+
+        if sub in ("completion", "completions"):
+            comp_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme completion",
+                description="Output shell tab-completion script (currently supports: bash).",
+            )
+            comp_parser.add_argument("shell", nargs="?", default="bash", choices=("bash",), help="Target shell (default: bash)")
+            comp_parser.parse_args(rest)
+            print(generate_bash_completion())
+            return 0
 
         if sub == "export":
             exp_parser = argparse.ArgumentParser(
@@ -390,8 +448,10 @@ def main(argv: list[str] | None = None) -> int:
             "  synth-shell-theme                Launch interactive 2-column TUI\n"
             "  synth-shell-theme web            Launch live browser-based Web Studio (port 7778)\n"
             "  synth-shell-theme sep            Launch interactive Dual Separator & 60+ Glyph Editor\n"
-            "  synth-shell-theme init           Apply all v1.1 runtime, speed, segment & safety patches\n"
-            "  synth-shell-theme doctor         Check config, locale, Nerd Fonts, backups & patch health\n"
+            "  synth-shell-theme init           Apply all v1.2 runtime, speed, TrueColor & hook-chaining patches\n"
+            "  synth-shell-theme doctor         Check config, locale, Nerd Fonts, TERM, backups & patch health\n"
+            "  synth-shell-theme bench          Measure live prompt_command_hook latency (p50 / p95 ms)\n"
+            "  synth-shell-theme completion     Print Bash tab-completion script\n"
             "  synth-shell-theme export FILE    Export current setup as a portable JSON preset\n"
             "  synth-shell-theme import FILE    Import and apply a JSON preset"
         ),
@@ -416,6 +476,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-git", type=int, default=None, metavar="N", help="Max Git branch length (0=unlimited, or 4-80)")
     parser.add_argument("--max-pyenv", type=int, default=None, metavar="N", help="Max Python/Conda env name length (0=unlimited, or 4-60)")
     parser.add_argument("--max-kube", type=int, default=None, metavar="N", help="Max Kubernetes context length (0=unlimited, or 4-60)")
+    parser.add_argument("--compact-width", type=int, default=None, metavar="COLS", help="Hide secondary segments when terminal width < COLS (default 90, 0=off)")
+    parser.add_argument("--git-counts", dest="git_counts", action="store_true", default=None, help="Show exact Git ahead/behind counts (↑N ↓M)")
+    parser.add_argument("--no-git-counts", dest="git_counts", action="store_false", help="Hide exact Git ahead/behind counts")
+    parser.add_argument("--transient", dest="transient", action="store_true", default=None, help="Enable ble.sh transient prompt trimming when ble.sh is loaded")
+    parser.add_argument("--no-transient", dest="transient", action="store_false", help="Disable ble.sh transient prompt trimming")
+    parser.add_argument("--toggle-theme", action="store_true", help="Toggle between configured Light and Dark themes in 1 command")
+    parser.add_argument("--light-theme", default=None, metavar="THEME", help="Preferred Light theme slug for --toggle-theme (default: catppuccin-latte)")
+    parser.add_argument("--dark-theme", default=None, metavar="THEME", help="Preferred Dark theme slug for --toggle-theme (default: tokyo-night)")
     parser.add_argument("--prefix", default=None, metavar="TEXT", help='Leading prompt prefix icon/string (use "auto" for OS icon, "" to clear)')
     parser.add_argument("--text-effect", choices=VALID_FONT_EFFECTS, default=None, help="Global segment text effect (bold, regular, italic, dim, none)")
     parser.add_argument("--terminal-title", dest="terminal_title", action="store_true", default=None, help="Enable OSC-0 terminal tab/window title updates")
@@ -522,7 +590,11 @@ def main(argv: list[str] | None = None) -> int:
     did_non_interactive = False
     chosen_theme: dict[str, object] | None = None
 
-    if args.random:
+    if args.toggle_theme:
+        res_tog = toggle_light_dark_theme(light_slug=args.light_theme, dark_slug=args.dark_theme)
+        print(f"Toggled to {res_tog['mode']} theme: {BOLD}{res_tog['theme']}{RESET} ({res_tog['config_path']})")
+        did_non_interactive = True
+    elif args.random:
         pick_t = random.choice(themes)
         chosen_theme = pick_t
         res = apply_theme(pick_t, force_white=args.force_white_text, keep_input=args.keep_input)
@@ -577,6 +649,11 @@ def main(argv: list[str] | None = None) -> int:
             args.max_git,
             args.max_pyenv,
             args.max_kube,
+            args.compact_width,
+            args.git_counts,
+            args.transient,
+            args.light_theme if not args.toggle_theme else None,
+            args.dark_theme if not args.toggle_theme else None,
             args.prefix,
             args.text_effect,
             args.terminal_title,
@@ -594,6 +671,11 @@ def main(argv: list[str] | None = None) -> int:
             max_git_char=args.max_git,
             max_pyenv_char=args.max_pyenv,
             max_kube_char=args.max_kube,
+            compact_width=args.compact_width,
+            git_show_counts=args.git_counts,
+            transient_prompt=args.transient,
+            light_theme=args.light_theme if not args.toggle_theme else None,
+            dark_theme=args.dark_theme if not args.toggle_theme else None,
             prompt_prefix=args.prefix,
             font_effect=args.text_effect,
             enable_terminal_title=args.terminal_title,

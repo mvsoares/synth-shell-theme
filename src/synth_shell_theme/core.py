@@ -6,7 +6,10 @@ import json
 import os
 import re
 import shutil
+import statistics
+import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -16,9 +19,11 @@ from synth_shell_theme.paths import (
     get_config_dir,
     get_config_path,
     get_greeter_config_path,
+    get_prompt_script_path,
     get_root_config_path,
 )
 from synth_shell_theme.separators import (
+    ALL_PRESETS,
     format_separator_assignment,
     get_separator_key,
     parse_separator_value,
@@ -49,6 +54,11 @@ VALID_FORMAT_TOKENS: tuple[str, ...] = (
     "DOCKER",
     "NODE",
     "SSH",
+    "JOBS",
+    "DIRENV",
+    "SHLVL",
+    "RUST",
+    "GO",
 )
 
 VALID_FONT_EFFECTS: tuple[str, ...] = (
@@ -412,6 +422,11 @@ def read_current_state(
     max_git_char = 0
     max_pyenv_char = 0
     max_kube_char = 28
+    compact_width = 90
+    git_show_counts = True
+    transient_prompt = False
+    light_theme = "catppuccin-latte"
+    dark_theme = "tokyo-night"
     prompt_prefix = ""
     font_effect = "bold"
     enable_terminal_title = True
@@ -445,6 +460,16 @@ def read_current_state(
                 max_pyenv_char = int(val)
             elif key == "max_kube_char" and val.isdigit():
                 max_kube_char = int(val)
+            elif key == "compact_width" and val.isdigit():
+                compact_width = int(val)
+            elif key == "git_show_counts":
+                git_show_counts = val.lower() in ("true", "1", "yes")
+            elif key == "transient_prompt":
+                transient_prompt = val.lower() in ("true", "1", "yes")
+            elif key == "synth_light_theme" and val:
+                light_theme = val
+            elif key == "synth_dark_theme" and val:
+                dark_theme = val
             elif key == "prompt_prefix":
                 prompt_prefix = val
             elif key == "font_effect_override" and val.lower() in VALID_FONT_EFFECTS:
@@ -499,6 +524,11 @@ def read_current_state(
         "max_git_char": max_git_char,
         "max_pyenv_char": max_pyenv_char,
         "max_kube_char": max_kube_char,
+        "compact_width": compact_width,
+        "git_show_counts": git_show_counts,
+        "transient_prompt": transient_prompt,
+        "light_theme": light_theme,
+        "dark_theme": dark_theme,
         "prompt_prefix": prompt_prefix,
         "font_effect": font_effect,
         "enable_terminal_title": enable_terminal_title,
@@ -698,6 +728,11 @@ def apply_layout_options(
     max_git_char: int | None = None,
     max_pyenv_char: int | None = None,
     max_kube_char: int | None = None,
+    compact_width: int | None = None,
+    git_show_counts: bool | None = None,
+    transient_prompt: bool | None = None,
+    light_theme: str | None = None,
+    dark_theme: str | None = None,
     prompt_prefix: str | None = None,
     font_effect: str | None = None,
     enable_terminal_title: bool | None = None,
@@ -708,12 +743,12 @@ def apply_layout_options(
     create_backup: bool = True,
     config_dir: Path | None = None,
 ) -> dict[str, object]:
-    """Update prompt layout, truncation, prefix, text effect, titlebar, and Git/duration speed settings."""
+    """Update prompt layout, truncation, responsive width, prefix, text effect, titlebar, and Git/duration settings."""
     base = config_dir if config_dir is not None else get_config_dir()
     cfg = get_config_path(base)
 
     if not cfg.is_file():
-        themes = load_themes()
+        themes = load_themes(config_dir=base)
         apply_theme(themes[1] if len(themes) > 1 else themes[0], create_backup=False, config_dir=base)
 
     updates: dict[str, str] = {}
@@ -740,6 +775,17 @@ def apply_layout_options(
     if max_kube_char is not None:
         max_kube_char = max(0, min(60, int(max_kube_char)))
         updates["max_kube_char"] = str(max_kube_char)
+    if compact_width is not None:
+        compact_width = max(0, min(200, int(compact_width)))
+        updates["compact_width"] = str(compact_width)
+    if git_show_counts is not None:
+        updates["git_show_counts"] = "true" if git_show_counts else "false"
+    if transient_prompt is not None:
+        updates["transient_prompt"] = "true" if transient_prompt else "false"
+    if light_theme is not None and light_theme.strip():
+        updates["synth_light_theme"] = light_theme.strip()
+    if dark_theme is not None and dark_theme.strip():
+        updates["synth_dark_theme"] = dark_theme.strip()
     if prompt_prefix is not None:
         updates["prompt_prefix"] = prompt_prefix
     if font_effect is not None:
@@ -774,6 +820,11 @@ def apply_layout_options(
         "max_git_char": max_git_char,
         "max_pyenv_char": max_pyenv_char,
         "max_kube_char": max_kube_char,
+        "compact_width": compact_width,
+        "git_show_counts": git_show_counts,
+        "transient_prompt": transient_prompt,
+        "light_theme": light_theme,
+        "dark_theme": dark_theme,
         "prompt_prefix": prompt_prefix,
         "font_effect": font_effect,
         "enable_terminal_title": enable_terminal_title,
@@ -1077,6 +1128,11 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
         max_git_char=int(data["max_git_char"]) if "max_git_char" in data else None,
         max_pyenv_char=int(data["max_pyenv_char"]) if "max_pyenv_char" in data else None,
         max_kube_char=int(data["max_kube_char"]) if "max_kube_char" in data else None,
+        compact_width=int(data["compact_width"]) if "compact_width" in data else None,
+        git_show_counts=bool(data["git_show_counts"]) if "git_show_counts" in data else None,
+        transient_prompt=bool(data["transient_prompt"]) if "transient_prompt" in data else None,
+        light_theme=str(data["light_theme"]) if "light_theme" in data else None,
+        dark_theme=str(data["dark_theme"]) if "dark_theme" in data else None,
         prompt_prefix=str(data["prompt_prefix"]) if "prompt_prefix" in data else None,
         font_effect=str(data["font_effect"]) if "font_effect" in data else None,
         enable_terminal_title=bool(data["enable_terminal_title"]) if "enable_terminal_title" in data else None,
@@ -1094,3 +1150,218 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
         "backup": str(bak) if bak else None,
         "state": read_current_state(config_dir=base),
     }
+
+
+def toggle_light_dark_theme(
+    light_slug: str | None = None,
+    dark_slug: str | None = None,
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Toggle between the configured Light and Dark theme pair in 1 command."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    catalog = load_themes(config_dir=base)
+    state = read_current_state(catalog, base)
+
+    light_choice = (light_slug or str(state.get("light_theme") or "catppuccin-latte")).strip()
+    dark_choice = (dark_slug or str(state.get("dark_theme") or "tokyo-night")).strip()
+
+    light_t, _ = find_theme(light_choice, catalog)
+    dark_t, _ = find_theme(dark_choice, catalog)
+    if not light_t:
+        raise ValueError(f"Light theme not found: {light_choice}")
+    if not dark_t:
+        raise ValueError(f"Dark theme not found: {dark_choice}")
+
+    active_name = str(state.get("active_theme") or "").lower()
+    is_currently_light = (
+        active_name == str(light_t.get("name", "")).lower()
+        or "latte" in active_name
+        or "light" in active_name
+    )
+    target_theme = dark_t if is_currently_light else light_t
+    target_mode = "dark" if is_currently_light else "light"
+
+    res = apply_theme(target_theme, config_dir=base)
+    apply_layout_options(
+        light_theme=str(light_t.get("slug") or light_choice),
+        dark_theme=str(dark_t.get("slug") or dark_choice),
+        create_backup=False,
+        config_dir=base,
+    )
+    return {
+        "mode": target_mode,
+        "theme": res["theme"],
+        "theme_id": res["theme_id"],
+        "light_theme": str(light_t.get("name")),
+        "dark_theme": str(dark_t.get("name")),
+        "backup": res["backup"],
+        "config_path": res["config_path"],
+    }
+
+
+def benchmark_prompt(
+    iterations: int = 15,
+    config_dir: Path | None = None,
+    cwd: Path | None = None,
+) -> dict[str, object]:
+    """Measure live Bash `prompt_command_hook` latency (min, p50, p95, max in ms)."""
+    base = config_dir if config_dir is not None else get_config_dir()
+    prompt_sh = get_prompt_script_path(base)
+    runs = max(3, min(100, int(iterations)))
+
+    if not prompt_sh.is_file():
+        return {
+            "ok": False,
+            "error": f"Prompt script not found: {prompt_sh}",
+            "iterations": 0,
+            "patches": inspect_patches(base),
+        }
+
+    if shutil.which("bash") is None:
+        return {
+            "ok": False,
+            "error": "Bash executable not found on PATH.",
+            "iterations": 0,
+            "patches": inspect_patches(base),
+        }
+
+    probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+    if probe.returncode != 0:
+        return {
+            "ok": False,
+            "error": "Bash is unavailable on this host.",
+            "iterations": 0,
+            "patches": inspect_patches(base),
+        }
+
+    raw_script = prompt_sh.read_text(encoding="utf-8", errors="replace")
+    stripped = "\n".join(
+        ln for ln in raw_script.splitlines() if "synth-shell-theme: interactive_guard" not in ln
+    )
+    # Replace the interactive source check at the bottom so benchmark can invoke synth_shell_prompt() cleanly
+    stripped = re.sub(
+        r'elif \[ -n "\$\( echo \$- \| grep i \)" \]; then',
+        "elif true; then",
+        stripped,
+    )
+
+    with tempfile.TemporaryDirectory(prefix="synth-shell-bench-") as tmp:
+        bench_sh = Path(tmp) / "bench_prompt.sh"
+        bench_sh.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+        driver = (
+            f'source "{bench_sh}" >/dev/null 2>&1; '
+            'declare -F prompt_command_hook >/dev/null 2>&1 || exit 2; '
+            "prompt_command_hook; "  # warm-up
+            f"for ((i=0; i<{runs}; i++)); do "
+            't0="${EPOCHREALTIME:-}"; '
+            "prompt_command_hook; "
+            't1="${EPOCHREALTIME:-}"; '
+            'if [[ -n "$t0" && -n "$t1" ]]; then '
+            'echo "$(( (${t1/./} - ${t0/./}) ))"; '
+            "else echo 0; fi; "
+            "done"
+        )
+        bench_env = dict(os.environ)
+        if not bench_env.get("TERM") or bench_env.get("TERM") == "dumb":
+            bench_env["TERM"] = "xterm-256color"
+        t_wall0 = time.perf_counter()
+        proc = subprocess.run(
+            ["bash", "-c", driver],
+            cwd=str(cwd) if cwd else None,
+            env=bench_env,
+            capture_output=True,
+            text=True,
+            timeout=25,
+            check=False,
+        )
+        t_wall_ms = (time.perf_counter() - t_wall0) * 1000.0
+
+    if proc.returncode != 0:
+        return {
+            "ok": False,
+            "error": (proc.stderr or "Failed to execute prompt_command_hook").strip(),
+            "iterations": 0,
+            "patches": inspect_patches(base),
+        }
+
+    samples_ms: list[float] = []
+    for ln in proc.stdout.splitlines():
+        s = ln.strip()
+        if s.isdigit() and int(s) > 0:
+            samples_ms.append(int(s) / 1000.0)
+
+    if not samples_ms:
+        per_run = round(t_wall_ms / runs, 2)
+        samples_ms = [per_run] * runs
+
+    samples_ms.sort()
+    p50 = round(statistics.median(samples_ms), 2)
+    p95_idx = min(len(samples_ms) - 1, int(round(0.95 * (len(samples_ms) - 1))))
+    p95 = round(samples_ms[p95_idx], 2)
+
+    return {
+        "ok": True,
+        "iterations": len(samples_ms),
+        "min_ms": round(samples_ms[0], 2),
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "max_ms": round(samples_ms[-1], 2),
+        "cwd": str(cwd or Path.cwd()),
+        "patches": inspect_patches(base),
+    }
+
+
+def generate_bash_completion(config_dir: Path | None = None) -> str:
+    """Generate a self-contained Bash tab-completion script for `synth-shell-theme` & `synth-shell-separator`."""
+    themes = load_themes(config_dir=config_dir)
+    theme_slugs = " ".join(str(t.get("slug", "")) for t in themes if t.get("slug"))
+    sep_keys = " ".join(key for key, *_ in ALL_PRESETS)
+    seg_tokens = " ".join(VALID_FORMAT_TOKENS)
+    effects = " ".join(VALID_FONT_EFFECTS)
+
+    return f"""# Bash completion for synth-shell-theme & synth-shell-separator
+# Activate with: eval "$(synth-shell-theme completion bash)"
+_synth_shell_theme_complete()
+{{
+    local cur prev words cword
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+
+    local subcmds="tui web studio sep init doctor bench export import completion"
+    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
+    local themes="{theme_slugs}"
+    local seps="{sep_keys}"
+    local segs="{seg_tokens}"
+    local effects="{effects}"
+
+    case "$prev" in
+        -a|--apply|--light-theme|--dark-theme)
+            COMPREPLY=( $(compgen -W "$themes" -- "$cur") )
+            return 0
+            ;;
+        -t|--separator|-i|--internal|-e|--end|-d|--dual)
+            COMPREPLY=( $(compgen -W "$seps" -- "$cur") )
+            return 0
+            ;;
+        --text-effect)
+            COMPREPLY=( $(compgen -W "$effects" -- "$cur") )
+            return 0
+            ;;
+        --format)
+            COMPREPLY=( $(compgen -W "$segs" -- "$cur") )
+            return 0
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [[ "$COMP_CWORD" -eq 1 && "$cur" != -* ]]; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}}
+complete -F _synth_shell_theme_complete synth-shell-theme synth-shell-separator
+"""
