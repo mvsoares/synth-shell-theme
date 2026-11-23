@@ -23,7 +23,7 @@ INTERACTIVE_GUARD_LINE = (
 
 FAST_GET_KUBE = """getKube()
 {
-\t# synth-shell-theme: kube_fast v11 (zero-subshell kubeconfig reader + max_kube_char)
+\t# synth-shell-theme: kube_fast v139 (zero-subshell kubeconfig context + namespace + prod warning + max_kube_char)
 \tlocal cfg="${KUBECONFIG:-}"
 \tcfg="${cfg%%:*}"
 \tcfg="${cfg:-$HOME/.kube/config}"
@@ -39,14 +39,62 @@ FAST_GET_KUBE = """getKube()
 \t\tfi
 \tdone < "$cfg"
 \t[[ -z "$ctx" ]] && return
-\tif [[ "$ctx" =~ ^gke_[^_]+_[^_]+_(.+)$ ]]; then
-\t\tctx="${BASH_REMATCH[1]#gke-}"
+\tlocal ns=""
+\tif [[ "${SSP_KUBE_SHOW_NAMESPACE:-true}" == "true" ]]; then
+\t\tlocal _in_ctxs=0 _cur_name="" _cur_ns=""
+\t\twhile IFS= read -r line; do
+\t\t\tif [[ "$line" =~ ^contexts: ]]; then
+\t\t\t\t_in_ctxs=1; continue
+\t\t\telif (( _in_ctxs == 1 )) && [[ "$line" =~ ^[a-zA-Z0-9_-]+: ]]; then
+\t\t\t\t[[ "$_cur_name" == "$ctx" && -n "$_cur_ns" ]] && ns="$_cur_ns"
+\t\t\t\tbreak
+\t\t\tfi
+\t\t\t(( _in_ctxs == 0 )) && continue
+\t\t\tif [[ "$line" =~ ^[[:space:]]*-[[:space:]]+ ]]; then
+\t\t\t\tif [[ "$_cur_name" == "$ctx" && -n "$_cur_ns" ]]; then
+\t\t\t\t\tns="$_cur_ns"; break
+\t\t\t\tfi
+\t\t\t\t_cur_name=""; _cur_ns=""
+\t\t\tfi
+\t\t\tif [[ "$line" =~ ^[[:space:]]*-?[[:space:]]*name:[[:space:]]*(.*)$ ]]; then
+\t\t\t\t_cur_name="${BASH_REMATCH[1]}"
+\t\t\t\t_cur_name="${_cur_name%"${_cur_name##*[![:space:]]}"}"
+\t\t\t\t_cur_name="${_cur_name%\\"}" ; _cur_name="${_cur_name#\\"}"
+\t\t\t\t_cur_name="${_cur_name%\\'}" ; _cur_name="${_cur_name#\\'}"
+\t\t\telif [[ "$line" =~ ^[[:space:]]*namespace:[[:space:]]*(.*)$ ]]; then
+\t\t\t\t_cur_ns="${BASH_REMATCH[1]}"
+\t\t\t\t_cur_ns="${_cur_ns%"${_cur_ns##*[![:space:]]}"}"
+\t\t\t\t_cur_ns="${_cur_ns%\\"}" ; _cur_ns="${_cur_ns#\\"}"
+\t\t\t\t_cur_ns="${_cur_ns%\\'}" ; _cur_ns="${_cur_ns#\\'}"
+\t\t\tfi
+\t\tdone < "$cfg"
+\t\t[[ -z "$ns" && "$_cur_name" == "$ctx" && -n "$_cur_ns" ]] && ns="$_cur_ns"
+\tfi
+\tlocal disp="$ctx"
+\tif [[ "$disp" =~ ^gke_[^_]+_[^_]+_(.+)$ ]]; then
+\t\tdisp="${BASH_REMATCH[1]#gke-}"
+\tfi
+\tif [[ -n "$ns" && "$ns" != "default" ]]; then
+\t\tdisp="${disp} (${ns})"
 \tfi
 \tlocal max_k="${SSP_MAX_KUBE_CHAR:-28}"
-\tif (( max_k > 3 && ${#ctx} > max_k )); then
-\t\tctx="${ctx:0:$((max_k - 1))}…"
+\tif (( max_k > 3 && ${#disp} > max_k )); then
+\t\tdisp="${disp:0:$((max_k - 1))}…"
 \tfi
-\tprintf '☸ %s' "$ctx"
+\tlocal _is_prod=0
+\tif [[ "${SSP_KUBE_PROD_WARNING:-true}" == "true" ]]; then
+\t\tlocal _pat="${SSP_KUBE_PROD_PATTERN:-prod|production|prd|live}"
+\t\tlocal _had_nocase=0
+\t\tshopt -q nocasematch && _had_nocase=1
+\t\tshopt -s nocasematch
+\t\t[[ "${ctx} ${ns}" =~ ($_pat) ]] && _is_prod=1
+\t\t(( _had_nocase == 0 )) && shopt -u nocasematch
+\tfi
+\tif (( _is_prod == 1 )); then
+\t\tprintf '🚨 ☸ %s' "$disp"
+\telse
+\t\tprintf '☸ %s' "$disp"
+\tfi
 }"""
 
 SINGLE_PASS_GIT_V13 = """    # synth-shell-theme: git_single_pass v13 (WSL fast + timeout + async + counts + rebase/merge/worktree + max_git_char)
@@ -441,6 +489,8 @@ V12_SEGMENTS_BLOCK = """# synth-shell-theme: v11_segments
 # synth-shell-theme: v13_segments
 # synth-shell-theme: responsive_width
 # synth-shell-theme: osc133_semantic
+# synth-shell-theme: osc7_cwd
+# synth-shell-theme: v139_smart_features
 # synth-shell-theme: right_prompt
 _ssp_has_element()
 {
@@ -636,9 +686,104 @@ getBattery()
 \tfi
 \tprintf '%s %d%%' "$icon" "$cap"
 }
+getSudo()
+{
+\tcommand -v sudo >/dev/null 2>&1 || return
+\tsudo -n true 2>/dev/null && printf '%s' "${SSP_SUDO_SYMBOL:-🔓 sudo}"
+}
+getJj()
+{
+\tlocal _w="$PWD" _st=0 _found=0
+\twhile [[ -n "$_w" && $_st -lt 15 ]]; do
+\t\tif [[ -d "${_w}/.jj" ]]; then _found=1; break; fi
+\t\t[[ "$_w" == "/" ]] && break
+\t\t_w="${_w%/*}"
+\t\t[[ -z "$_w" ]] && _w="/"
+\t\t_st=$((_st + 1))
+\tdone
+\t(( _found == 0 )) && return
+\tlocal _jj_out=""
+\tif command -v jj >/dev/null 2>&1; then
+\t\t_jj_out="$(jj log -r @ --no-graph --ignore-working-copy -T 'change_id.shortest(4) ++ if(bookmarks, " " ++ bookmarks, "")' 2>/dev/null)"
+\tfi
+\tprintf '🥋 %s' "${_jj_out:-jj}"
+}
+getCustom()
+{
+\tlocal _val="${SYNTH_CUSTOM_BADGE:-${SSP_CUSTOM_TEXT:-}}"
+\t[[ -z "$_val" ]] && return
+\tprintf '%s' "$_val"
+}
+_ssp_shorten_path_fish()
+{
+\tlocal p="${1:-$PWD}"
+\tif [[ "$p" == "$HOME" ]]; then _SSP_FISH_PATH="~"; return; fi
+\tif [[ "$p" == "$HOME"/* ]]; then p="~${p#"$HOME"}"; fi
+\tlocal IFS='/' _parts=() _out="" _idx=0 _last=0
+\tread -r -a _parts <<< "$p"
+\t_last=$(( ${#_parts[@]} - 1 ))
+\twhile (( _idx <= _last )); do
+\t\tlocal _seg="${_parts[$_idx]}"
+\t\tif (( _idx == _last )); then
+\t\t\t_out+="${_seg}"
+\t\telif [[ -z "$_seg" ]]; then
+\t\t\t_out+="/"
+\t\telif [[ "$_seg" == "~" ]]; then
+\t\t\t_out+="~/"
+\t\telif [[ "$_seg" == .* && ${#_seg} -gt 1 ]]; then
+\t\t\t_out+="${_seg:0:2}/"
+\t\telse
+\t\t\t_out+="${_seg:0:1}/"
+\t\tfi
+\t\t_idx=$(( _idx + 1 ))
+\tdone
+\t_SSP_FISH_PATH="${_out:-/}"
+}
+_ssp_osc7_emit()
+{
+\tlocal _raw="$PWD" _enc="" _i=0 _len=${#PWD} _ch="" _hex=""
+\twhile (( _i < _len )); do
+\t\t_ch="${_raw:_i:1}"
+\t\tcase "$_ch" in
+\t\t\t[a-zA-Z0-9._~/-]) _enc+="$_ch" ;;
+\t\t\t*) printf -v _hex '%%%02X' "'$_ch" 2>/dev/null && _enc+="$_hex" || _enc+="$_ch" ;;
+\t\tesac
+\t\t_i=$(( _i + 1 ))
+\tdone
+\tprintf '\\e]7;file://%s%s\\a' "${HOSTNAME:-localhost}" "$_enc"
+}
+_ssp_host_color_var()
+{
+\t_SSP_SSH_HOST_FG=""
+\t_SSP_SSH_HOST_BG=""
+\t[[ "${SSP_SSH_HOST_COLOR:-false}" != "true" ]] && return
+\t[[ -z "${SSH_CONNECTION:-}" && -z "${SSP_FORCE_SSH_COLOR:-}" ]] && return
+\tlocal hn="${HOSTNAME:-localhost}"
+\tlocal _had_nc=0
+\tshopt -q nocasematch && _had_nc=1
+\tshopt -s nocasematch
+\tif [[ "$hn" =~ (prod|production|prd|live) ]]; then
+\t\t_SSP_SSH_HOST_FG="white"; _SSP_SSH_HOST_BG="196"
+\telif [[ "$hn" =~ (stg|stag|staging|uat|qa) ]]; then
+\t\t_SSP_SSH_HOST_FG="black"; _SSP_SSH_HOST_BG="214"
+\tfi
+\t(( _had_nc == 0 )) && shopt -u nocasematch
+\t[[ -n "$_SSP_SSH_HOST_BG" ]] && return
+\tlocal _pal=(33 37 68 71 98 130 135 166 172 203 39 63)
+\tlocal _h=0 _i=0 _c="" _n=0 _hlen=${#hn}
+\twhile (( _i < _hlen )); do
+\t\t_c="${hn:_i:1}"
+\t\tprintf -v _n '%d' "'$_c" 2>/dev/null || _n=7
+\t\t_h=$(( (_h * 31 + _n) % 12 ))
+\t\t_i=$(( _i + 1 ))
+\tdone
+\t_SSP_SSH_HOST_FG="white"
+\t_SSP_SSH_HOST_BG="${_pal[$_h]}"
+}
 _ssp_format_duration_var()
 {
 \t_SSP_DUR=""
+\t_SSP_LAST_ELAPSED_MS=0
 \tlocal start_ms="${_SSP_CMD_START_MS:-0}"
 \t(( start_ms <= 0 )) && return
 \tlocal now_ms=0
@@ -648,6 +793,7 @@ _ssp_format_duration_var()
 \t\tnow_ms=$(( SECONDS * 1000 ))
 \tfi
 \tlocal elapsed=$(( now_ms - start_ms ))
+\t_SSP_LAST_ELAPSED_MS=$elapsed
 \tlocal min_ms="${SSP_MIN_DURATION_MS:-2000}"
 \t(( elapsed < min_ms )) && return
 \tif (( elapsed >= 60000 )); then
@@ -681,6 +827,9 @@ V12_COLORS_FOR_ELEMENT = """get_colors_for_element()
 \t\t"RUST")     echo "${SSP_COLORS_RUST[@]}" ;;
 \t\t"GO")       echo "${SSP_COLORS_GO[@]}" ;;
 \t\t"BATTERY")  echo "${SSP_COLORS_BATTERY[@]}" ;;
+\t\t"SUDO")     echo "${SSP_COLORS_SUDO[@]}" ;;
+\t\t"JJ")       echo "${SSP_COLORS_JJ[@]}" ;;
+\t\t"CUSTOM")   echo "${SSP_COLORS_CUSTOM[@]}" ;;
 \t\t"INPUT")    echo "${SSP_COLORS_INPUT[@]}" ;;
 \t\t*) ;;
 \tesac
@@ -709,6 +858,9 @@ _ssp_colors_var()
 \t\t"RUST")     _SSP_EL_C=("${SSP_COLORS_RUST[@]}") ;;
 \t\t"GO")       _SSP_EL_C=("${SSP_COLORS_GO[@]}") ;;
 \t\t"BATTERY")  _SSP_EL_C=("${SSP_COLORS_BATTERY[@]}") ;;
+\t\t"SUDO")     _SSP_EL_C=("${SSP_COLORS_SUDO[@]}") ;;
+\t\t"JJ")       _SSP_EL_C=("${SSP_COLORS_JJ[@]}") ;;
+\t\t"CUSTOM")   _SSP_EL_C=("${SSP_COLORS_CUSTOM[@]}") ;;
 \t\t"INPUT")    _SSP_EL_C=("${SSP_COLORS_INPUT[@]}") ;;
 \t\t*)          _SSP_EL_C=(white none bold) ;;
 \tesac
@@ -738,19 +890,37 @@ V12_COMBINE_ELEMENTS = """_ssp_text_for_el()
 \t\t"RUST")     _SSP_EL_TXT="${rust_seg:-}" ;;
 \t\t"GO")       _SSP_EL_TXT="${go_seg:-}" ;;
 \t\t"BATTERY")  _SSP_EL_TXT="${battery_seg:-}" ;;
+\t\t"SUDO")     _SSP_EL_TXT="${sudo_seg:-}" ;;
+\t\t"JJ")       _SSP_EL_TXT="${jj_seg:-}" ;;
+\t\t"CUSTOM")   _SSP_EL_TXT="${custom_seg:-}" ;;
 \t\t"INPUT")    _SSP_EL_TXT="" ;;
 \t\t*)          _SSP_EL_TXT="" ;;
 \tesac
+}
+_ssp_dyn_colors_var()
+{
+\t_ssp_colors_var "$1"
+\tif [[ "$1" == "KUBE" && "${kube:-}" == *"🚨"* ]]; then
+\t\t_SSP_EL_C=(white 196 "${_SSP_EL_C[2]:-bold}")
+\telif [[ "$1" == "HOST" && -n "${_SSP_SSH_HOST_BG:-}" ]]; then
+\t\t_SSP_EL_C=("${_SSP_SSH_HOST_FG:-white}" "${_SSP_SSH_HOST_BG}" "${_SSP_EL_C[2]:-bold}")
+\telif [[ "$1" == "GIT" && "${SSP_GIT_DYNAMIC_COLOR:-false}" == "true" ]]; then
+\t\tif [[ "${git_branch:-}" == *"| REBASE"* || "${git_branch:-}" == *"| MERGE"* || "${git_branch:-}" == *"| CHERRY"* || "${git_branch:-}" == *"| BISECT"* ]]; then
+\t\t\t_SSP_EL_C=(white 196 "${_SSP_EL_C[2]:-bold}")
+\t\telif [[ ( -n "${SSP_GIT_DIRTY:-}" && "${git_branch:-}" == *"${SSP_GIT_DIRTY}"* ) || "${git_branch:-}" == *"◔"* || "${git_branch:-}" == *"*"* ]]; then
+\t\t\t_SSP_EL_C=(black 214 "${_SSP_EL_C[2]:-bold}")
+\t\tfi
+\tfi
 }
 _ssp_combine_var()
 {
 \tlocal first="${1:-}"
 \tlocal second="${2:-}"
-\t_ssp_colors_var "$first"
+\t_ssp_dyn_colors_var "$first"
 \tlocal text_color="${_SSP_EL_C[0]:-white}"
 \tlocal bg_color="${_SSP_EL_C[1]:-none}"
 \tlocal text_effect="${_SSP_EL_C[2]:-bold}"
-\t_ssp_colors_var "$second"
+\t_ssp_dyn_colors_var "$second"
 \tlocal next_bg_color="${_SSP_EL_C[1]:-none}"
 \t_ssp_text_for_el "$first"
 \tlocal text="$_SSP_EL_TXT"
@@ -775,6 +945,10 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tif [[ "${SSP_TERMINAL_SANITIZE:-true}" == "true" && -z "${BLE_VERSION:-}" ]] && [[ -t 1 || "${SSP_FORCE_SANITIZE:-}" == "1" ]]; then
 \t\tprintf '\\e[?1000l\\e[?1002l\\e[?1003l\\e[?1006l\\e[?1015l\\e[?1004l'
 \tfi
+\tif [[ "${SSP_ENABLE_OSC7:-true}" == "true" ]] && [[ -t 1 || "${SSP_FORCE_OSC7:-}" == "1" ]]; then
+\t\t_ssp_osc7_emit
+\tfi
+\t_ssp_host_color_var
 \tlocal elements=("${SSP_ELEMENTS[@]}")
 \tlocal right_elements=("${SSP_RIGHT_ELEMENTS[@]}")
 \tlocal user="${USER:-}"
@@ -791,9 +965,18 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tlocal path="" git_branch="" pyenv="" kube="" tf="" clock=""
 \tlocal status_seg="" duration_seg="" aws_seg="" gcp_seg="" docker_seg="" node_seg="" ssh_seg=""
 \tlocal jobs_seg="" direnv_seg="" shlvl_seg="" rust_seg="" go_seg="" battery_seg=""
+\tlocal sudo_seg="" jj_seg="" custom_seg=""
 
-\t_ssp_has_element "PWD" && path="$(shortenPath "$PWD" "$_eff_pwd_max" "${SSP_PWD_TRUNC_SYMBOL:-…}")"
+\tif _ssp_has_element "PWD"; then
+\t\tif [[ "${SSP_PWD_STYLE:-default}" == "fish" ]]; then
+\t\t\t_ssp_shorten_path_fish "$PWD"
+\t\t\tpath="$_SSP_FISH_PATH"
+\t\telse
+\t\t\tpath="$(shortenPath "$PWD" "$_eff_pwd_max" "${SSP_PWD_TRUNC_SYMBOL:-…}")"
+\t\tfi
+\tfi
 \t_ssp_has_element "GIT" && git_branch="$(getGitBranch)"
+\t_ssp_has_element "JJ" && jj_seg="$(getJj)"
 \t_ssp_has_element "PYENV" && pyenv="$(getPyenv)"
 \tif (( _is_compact == 0 )); then
 \t\t_ssp_has_element "KUBE" && kube="$(getKube)"
@@ -812,15 +995,30 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tif _ssp_has_element "STATUS" && (( last_exit != 0 )); then
 \t\tstatus_seg="${SSP_STATUS_SYMBOL:-✗ }${last_exit}"
 \tfi
-\tif _ssp_has_element "DURATION"; then
+\t_SSP_LAST_ELAPSED_MS=0
+\tif _ssp_has_element "DURATION" || (( ${SSP_NOTIFY_DURATION_SEC:-0} > 0 )); then
 \t\t_ssp_format_duration_var
-\t\tduration_seg="$_SSP_DUR"
+\t\t_ssp_has_element "DURATION" && duration_seg="$_SSP_DUR"
+\tfi
+\tif (( ${SSP_NOTIFY_DURATION_SEC:-0} > 0 && _SSP_LAST_ELAPSED_MS >= SSP_NOTIFY_DURATION_SEC * 1000 )) && [[ -t 1 || "${SSP_FORCE_NOTIFY:-}" == "1" ]]; then
+\t\tlocal _n_msg=""
+\t\tif (( last_exit == 0 )); then
+\t\t\tprintf -v _n_msg 'synth-shell: ✓ Command finished (%d.%ds)' $(( _SSP_LAST_ELAPSED_MS / 1000 )) $(( (_SSP_LAST_ELAPSED_MS % 1000) / 100 ))
+\t\telse
+\t\t\tprintf -v _n_msg 'synth-shell: ✗ Command failed (exit %d, %d.%ds)' "$last_exit" $(( _SSP_LAST_ELAPSED_MS / 1000 )) $(( (_SSP_LAST_ELAPSED_MS % 1000) / 100 ))
+\t\tfi
+\t\tcase "${TERM:-}" in
+\t\t\t*kitty*) printf '\\e]99;i=1:d=0;%s\\a' "$_n_msg" ;;
+\t\t\t*)       printf '\\e]9;%s\\a' "$_n_msg" ;;
+\t\tesac
 \tfi
 \t_SSP_CMD_START_MS=0
 \t_ssp_has_element "SSH" && ssh_seg="$(getSsh)"
 \t_ssp_has_element "JOBS" && jobs_seg="$(getJobs)"
 \t_ssp_has_element "DIRENV" && direnv_seg="$(getDirenv)"
 \t_ssp_has_element "SHLVL" && shlvl_seg="$(getShlvl)"
+\t_ssp_has_element "SUDO" && sudo_seg="$(getSudo)"
+\t_ssp_has_element "CUSTOM" && custom_seg="$(getCustom)"
 
 \tlocal filtered=() _el
 \tfor _el in "${elements[@]}"; do
@@ -909,11 +1107,22 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \t# synth-shell-theme: v12_init
 \t# synth-shell-theme: v13_init
+\t# synth-shell-theme: v139_init
 \t# synth-shell-theme: hook_chaining
 \tSSP_RIGHT_ELEMENTS=(${right_format:-})
 \tSSP_RIGHT_FILL_CHAR="${right_fill_char:-─}"
 \tSSP_ENABLE_OSC133=${enable_osc133:-true}
+\tSSP_ENABLE_OSC7=${enable_osc7:-true}
 \tSSP_TERMINAL_SANITIZE=${enable_terminal_sanitize:-true}
+\tSSP_KUBE_SHOW_NAMESPACE=${kube_show_namespace:-true}
+\tSSP_KUBE_PROD_WARNING=${kube_prod_warning:-true}
+\tSSP_KUBE_PROD_PATTERN="${kube_prod_pattern:-prod|production|prd|live}"
+\tSSP_GIT_DYNAMIC_COLOR=${git_dynamic_color:-false}
+\tSSP_SSH_HOST_COLOR=${ssh_host_color:-false}
+\tSSP_PWD_STYLE="${pwd_style:-default}"
+\tSSP_NOTIFY_DURATION_SEC=${notify_duration_sec:-0}
+\tSSP_CUSTOM_TEXT="${custom_segment_text:-}"
+\tSSP_SUDO_SYMBOL="${sudo_symbol:-🔓 sudo}"
 \tSSP_GIT_SHOW_STATE=${git_show_state:-true}
 \tSSP_BATTERY_THRESHOLD=${battery_threshold:-100}
 \tSSP_COLORS_STATUS=(${font_color_status:-white} ${background_status:-196} ${texteffect_status:-bold})
@@ -929,6 +1138,9 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \tSSP_COLORS_RUST=(${font_color_rust:-white} ${background_rust:-166} ${texteffect_rust:-bold})
 \tSSP_COLORS_GO=(${font_color_go:-black} ${background_go:-81} ${texteffect_go:-bold})
 \tSSP_COLORS_BATTERY=(${font_color_battery:-black} ${background_battery:-114} ${texteffect_battery:-bold})
+\tSSP_COLORS_SUDO=(${font_color_sudo:-white} ${background_sudo:-196} ${texteffect_sudo:-bold})
+\tSSP_COLORS_JJ=(${font_color_jj:-black} ${background_jj:-214} ${texteffect_jj:-bold})
+\tSSP_COLORS_CUSTOM=(${font_color_custom:-black} ${background_custom:-219} ${texteffect_custom:-bold})
 \tSSP_MAX_GIT_CHAR=${max_git_char:-0}
 \tSSP_MAX_PYENV_CHAR=${max_pyenv_char:-0}
 \tSSP_MAX_KUBE_CHAR=${max_kube_char:-28}
@@ -1171,6 +1383,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         return {
             "prompt_script_found": False,
             "kube_fast": False,
+            "kube_namespace_prod": False,
             "git_single_pass": False,
             "git_wsl_fast": False,
             "git_ahead_behind_counts": False,
@@ -1183,6 +1396,8 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
             "v12_segments": False,
             "v13_segments": False,
             "osc133_semantic": False,
+            "osc7_cwd": False,
+            "v139_smart_features": False,
             "terminal_sanitize": False,
             "right_prompt": False,
             "responsive_width": False,
@@ -1201,6 +1416,9 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
     kube_body = m_kube.group(0) if m_kube else ""
     kube_fast = bool(kube_body) and ("yq" not in kube_body) and (
         "SSP_MAX_KUBE_CHAR" in kube_body or "current-context:" in kube_body
+    )
+    kube_namespace_prod = (
+        ("kube_fast v139" in kube_body) if bool(kube_body) else True
     )
     git_single_pass = (
         "synth-shell-theme: git_single_pass" in content
@@ -1250,6 +1468,12 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         if has_full_hook
         else True
     )
+    osc7_cwd = ("synth-shell-theme: osc7_cwd" in content) if has_full_hook else True
+    v139_smart_features = (
+        ("synth-shell-theme: v139_smart_features" in content and "synth-shell-theme: v139_init" in content)
+        if has_full_hook
+        else True
+    )
     terminal_sanitize = ("synth-shell-theme: terminal_sanitize" in content) if has_full_hook else True
     right_prompt = ("synth-shell-theme: right_prompt" in content) if has_full_hook else True
     responsive_width = ("synth-shell-theme: responsive_width" in content) if has_full_hook else True
@@ -1288,6 +1512,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
 
     all_ok = (
         kube_fast
+        and kube_namespace_prod
         and git_single_pass
         and git_wsl_fast
         and git_ahead_behind_counts
@@ -1300,6 +1525,8 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         and v12_segments
         and v13_segments
         and osc133_semantic
+        and osc7_cwd
+        and v139_smart_features
         and terminal_sanitize
         and right_prompt
         and responsive_width
@@ -1313,6 +1540,7 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
     return {
         "prompt_script_found": True,
         "kube_fast": kube_fast,
+        "kube_namespace_prod": kube_namespace_prod,
         "git_single_pass": git_single_pass,
         "git_wsl_fast": git_wsl_fast,
         "git_ahead_behind_counts": git_ahead_behind_counts,
@@ -1325,6 +1553,8 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         "v12_segments": v12_segments,
         "v13_segments": v13_segments,
         "osc133_semantic": osc133_semantic,
+        "osc7_cwd": osc7_cwd,
+        "v139_smart_features": v139_smart_features,
         "terminal_sanitize": terminal_sanitize,
         "right_prompt": right_prompt,
         "responsive_width": responsive_width,
@@ -1354,11 +1584,12 @@ def apply_runtime_patches(
         original = prompt_sh.read_text(encoding="utf-8", errors="replace")
         updated = original
 
-        # 1. Fast zero-subshell kube context reader (with max_kube_char + nounset safe)
+        # 1. Fast zero-subshell kube context + namespace + prod warning reader (v139)
         m_kube = _GET_KUBE_RE.search(updated)
-        if m_kube and ('local cfg="${KUBECONFIG:-}"' not in m_kube.group(0)):
+        if m_kube and ("kube_fast v139" not in m_kube.group(0)):
             updated = _GET_KUBE_RE.sub(lambda _: FAST_GET_KUBE, updated, count=1)
             changes.append("kube_fast")
+            changes.append("kube_namespace_prod")
 
         # 2. Single-pass git status + WSL2 fast-untracked + timeout + async + counts + rebase/merge/worktree
         if _OLD_GIT_RE.search(updated):
@@ -1436,7 +1667,10 @@ def apply_runtime_patches(
         if "prompt_command_hook()" in updated and (
             "synth-shell-theme: v13_segments" not in updated
             or "synth-shell-theme: v13_init" not in updated
+            or "synth-shell-theme: v139_smart_features" not in updated
+            or "synth-shell-theme: v139_init" not in updated
             or "synth-shell-theme: osc133_semantic" not in updated
+            or "synth-shell-theme: osc7_cwd" not in updated
             or "synth-shell-theme: terminal_sanitize" not in updated
             or "synth-shell-theme: right_prompt" not in updated
             or "133;A\\e\\\\" in updated
@@ -1469,14 +1703,16 @@ def apply_runtime_patches(
             # Remove destructive DEBUG trap (replaced by PS0 reset)
             updated = _DEBUG_TRAP_RE.sub("", updated, count=1)
 
-            if "synth-shell-theme: v13_init" not in updated or "133;C\\e\\\\" in updated or "SSP_TERMINAL_SANITIZE" not in updated:
+            if "synth-shell-theme: v139_init" not in updated or "133;C\\e\\\\" in updated or "SSP_TERMINAL_SANITIZE" not in updated:
                 if _V11_INIT_AND_PC_RE.search(updated):
                     updated = _V11_INIT_AND_PC_RE.sub(lambda _: V12_INIT_AND_CHAINING, updated, count=1)
                 elif "\tPROMPT_COMMAND=prompt_command_hook" in updated:
                     updated = updated.replace("\tPROMPT_COMMAND=prompt_command_hook", V12_INIT_AND_CHAINING, 1)
 
             changes.append("v13_segments")
+            changes.append("v139_smart_features")
             changes.append("osc133_semantic")
+            changes.append("osc7_cwd")
             changes.append("terminal_sanitize")
             changes.append("right_prompt")
             if "hook_chaining" not in changes:

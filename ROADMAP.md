@@ -149,3 +149,14 @@ All 16 community enhancements across Phases 1–5 have been implemented in **`v1
 33. **[x] Interactive Drag-and-Drop Segments, Inline Color Editor & Shareable CLI in Web Studio** — Drag pills to reorder Left & Right prompt bars, click any Live Workbench segment to tweak its FG/BG hex inline, and copy a reproducible 1-line CLI command.
 34. **[x] Static Browser Demo Export (`export-web docs/index.html`) & Auto-Healing `doctor --fix`** — Zero-backend static HTML showcase ready for GitHub Pages, plus 1-command CRLF→LF repair and patch auto-remediation (`synth-shell-theme doctor --fix`).
 35. **[x] Automatic Terminal Mode Sanitizer (`terminal_sanitize` — `v1.3.2`)** — Zero-fork TTY-guarded reset (`\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1015l\e[?1004l`) on prompt return that automatically clears leaked SGR/X10/urxvt mouse tracking (`35;col;rowM`) and focus reporting left behind by dropped SSH/TUI sessions while preserving Readline bracketed paste (`?2004h`) and `ble.sh`.
+
+---
+
+## Implemented in `v1.3.9` (Smart DevOps Safety, Modern Terminal Superpowers & SSH/Starship/WezTerm Ecosystem) ✅
+
+36. **[x] Kubernetes Namespace + Automatic Production Red Warning (`kube_namespace_prod`)** — Pure-Bash kubeconfig parser extracts both `current-context` and matching `namespace` (`☸ ctx (ns)`), highlighting production contexts/namespaces (`--kube-prod-pattern`) in vibrant red with `🚨`.
+37. **[x] Dynamic Git Colors (`--git-dynamic-color`) & Deterministic SSH Host Coloring (`--ssh-host-color`)** — Automatically colors `GIT` amber when dirty and red during `REBASE`/`MERGE`, and hashes SSH hostnames (with automatic red `prod` / amber `stg` rules) to distinguish remote terminals at a glance.
+38. **[x] New Context Segments (`SUDO`, `JJ` Jujutsu VCS, `CUSTOM`) — 24 Total Segments** — Cached `sudo` credential indicator, zero-fork Jujutsu (`.jj`) repository detection, and user-defined `CUSTOM` badge (`--custom-badge` or `$SYNTH_CUSTOM_BADGE`).
+39. **[x] OSC 7 CWD Reporting (`--osc7`) & Long-Command Desktop Notifications (`--notify-sec` OSC 9/99)** — Pure-Bash URL-encoded OSC 7 so WezTerm/Ghostty/Kitty/Windows Terminal open new tabs & splits in the active directory, plus native desktop notifications when slow builds/deploys finish.
+40. **[x] Fish-Style Path Shortening (`--pwd-style fish`) & OS Auto Light/Dark Theme (`--auto-theme`)** — Pure-Bash `~/p/synth-shell-theme` abbreviation and automatic OS color-scheme detection (Linux GNOME/KDE, macOS `defaults`, Windows Registry).
+41. **[x] 1-Command SSH Remote Deploy (`ssh-install user@host`), `wezterm-theme.lua` Ecosystem Sync & `export-starship`** — Deploy patched prompt + config over SSH with zero Python/Git on the remote host, generate `wezterm-theme.lua` alongside `theme-env.sh` & `tmux-theme.conf`, and export any of the 64 themes + dual separators to `starship.toml`.

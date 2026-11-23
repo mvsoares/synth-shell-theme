@@ -561,7 +561,7 @@ printMonitorRAM()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_b:
                 boot = json.loads(r_b.read().decode("utf-8"))
-                self.assertEqual(len(boot["valid_segments"]), 21)
+                self.assertEqual(len(boot["valid_segments"]), 24)
                 self.assertIn("diagnostics", boot)
                 self.assertIn("greeter", boot)
 
@@ -1006,7 +1006,7 @@ fi
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/bootstrap") as r_boot:
                 boot = json.loads(r_boot.read().decode("utf-8"))
-                self.assertEqual(len(boot["valid_segments"]), 21)
+                self.assertEqual(len(boot["valid_segments"]), 24)
                 self.assertIn("BATTERY", boot["valid_segments"])
 
             req_eco = urllib.request.Request(
@@ -1018,6 +1018,204 @@ fi
             with urllib.request.urlopen(req_eco) as r_eco:
                 body_eco = json.loads(r_eco.read().decode("utf-8"))
                 self.assertTrue(body_eco["ok"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_v139_smart_devops_osc7_notify_fish_jj_wezterm_starship_ssh_and_autotheme(self) -> None:
+        # 1. Ecosystem sync includes wezterm-theme.lua + export-starship + ssh-install --dry-run
+        catalog = themes.load_themes(config_dir=self.cfg_dir)
+        tokyo, _ = themes.find_theme("tokyo-night", catalog)
+        assert tokyo is not None
+        core.apply_theme(tokyo, config_dir=self.cfg_dir)
+
+        eco = ecosystem.sync_ecosystem(config_dir=self.cfg_dir)
+        wez_lua = Path(eco["wezterm_lua"]).read_text(encoding="utf-8")
+        self.assertIn("tab_bar", wez_lua)
+        self.assertIn("active_tab", wez_lua)
+
+        starship_out = self.cfg_dir / "starship.toml"
+        res_st = ecosystem.export_starship_toml(starship_out, config_dir=self.cfg_dir)
+        self.assertEqual(res_st["theme"], "Tokyo Night")
+        st_toml = starship_out.read_text(encoding="utf-8")
+        self.assertIn("starship.rs/config-schema.json", st_toml)
+        self.assertIn("[kubernetes]", st_toml)
+
+        # 2. OS Auto Light/Dark theme detection
+        with mock.patch("synth_shell_theme.paths.detect_system_color_scheme", return_value="light"):
+            r_light = core.apply_auto_system_theme(config_dir=self.cfg_dir)
+            self.assertEqual(r_light["detected_scheme"], "light")
+            self.assertEqual(r_light["theme"], "Catppuccin Latte")
+        with mock.patch("synth_shell_theme.paths.detect_system_color_scheme", return_value="dark"):
+            r_dark = core.apply_auto_system_theme(config_dir=self.cfg_dir)
+            self.assertEqual(r_dark["detected_scheme"], "dark")
+            self.assertEqual(r_dark["theme"], "Tokyo Night")
+
+        # 3. Layout options & preset persistence for v1.3.9 fields
+        core.apply_layout_options(
+            enable_osc7=True,
+            kube_show_namespace=True,
+            kube_prod_warning=True,
+            kube_prod_pattern="prod|live",
+            git_dynamic_color=True,
+            ssh_host_color=True,
+            pwd_style="fish",
+            notify_duration_sec=30,
+            custom_segment_text="EU-WEST",
+            config_dir=self.cfg_dir,
+        )
+        cur = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertTrue(cur["enable_osc7"])
+        self.assertTrue(cur["kube_show_namespace"])
+        self.assertTrue(cur["kube_prod_warning"])
+        self.assertTrue(cur["git_dynamic_color"])
+        self.assertTrue(cur["ssh_host_color"])
+        self.assertEqual(cur["pwd_style"], "fish")
+        self.assertEqual(cur["notify_duration_sec"], 30)
+        self.assertEqual(cur["custom_segment_text"], "EU-WEST")
+
+        # 4. Patch prompt script & test ssh-install --dry-run + real Bash runtime behavior
+        full_prompt = MOCK_UPSTREAM_PROMPT_SH.replace(
+            '    echo "$is_dirty"',
+            '    echo "${branch:-main}"',
+        ) + """
+getEffectCode() { echo 0; }
+getPyenv() { echo ""; }
+getTerraform() { echo ""; }
+shortenPath() { echo "~/repo"; }
+get_colors_for_element() { echo "white blue bold"; }
+prompt_command_hook() { PS1="$USER"; }
+synth_shell_prompt()
+{
+\tformat="HOST PWD GIT KUBE JJ CUSTOM"
+\tSSP_ELEMENTS=($format "INPUT")
+\tSSP_COLORS_USER=(white blue bold)
+\tSSP_COLORS_HOST=(white 237 bold)
+\tSSP_COLORS_PWD=(black 255 bold)
+\tSSP_COLORS_GIT=(black 71 bold)
+\tSSP_COLORS_PYENV=(white 63 bold)
+\tSSP_COLORS_KUBE=(black 135 bold)
+\tSSP_COLORS_TF=(black 228 bold)
+\tSSP_COLORS_CLOCK=(white 240 bold)
+\tSSP_COLORS_INPUT=(white none bold)
+\tSSP_VERTICAL_PADDING=""
+\tSSP_NEW_LINE_LINK_TOP=""
+\tSSP_NEW_LINE_LINK_BOTTOM=""
+\tSSP_PROMPT_COMM_SEP=""
+\tSSP_BASH_SYMBOL=""
+\tSSP_MAX_PWD_CHAR=35
+\tSSP_PWD_TRUNC_SYMBOL="…"
+\tSSP_CLOCK_FORMAT="%H:%M"
+\tnone="$(tput sgr0)"
+\ttrap 'echo -ne "${none}"' DEBUG
+\tPROMPT_COMMAND=prompt_command_hook
+}
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+\texit
+elif [ -n "$( echo $- | grep i )" ]; then
+\tsynth_shell_prompt
+fi
+"""
+        prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
+        prompt_sh.write_text(full_prompt, encoding="utf-8", newline="\n")
+        pr = patches.apply_runtime_patches(self.cfg_dir)
+        for k in ("kube_namespace_prod", "osc7_cwd", "v139_smart_features", "all_applied"):
+            self.assertTrue(pr["status"][k], msg=f"Expected {k}=True, got {pr['status']}")
+        self.assertEqual(patches.apply_runtime_patches(self.cfg_dir)["changes"], [])
+
+        ssh_dry = ecosystem.ssh_install_remote("dev@prod-01", ascii_safe=True, dry_run=True, config_dir=self.cfg_dir)
+        self.assertTrue(ssh_dry["ok"])
+        self.assertTrue(ssh_dry["dry_run"])
+        self.assertGreater(int(ssh_dry["script_bytes"]), 1000)  # type: ignore[arg-type]
+
+        if shutil.which("bash"):
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                chk_sh = subprocess.run(["bash", "-n", str(prompt_sh)], capture_output=True, text=True, check=False)
+                self.assertEqual(chk_sh.returncode, 0, msg=chk_sh.stderr)
+
+                stripped = "\n".join(
+                    ln for ln in prompt_sh.read_text(encoding="utf-8").splitlines()
+                    if "interactive_guard" not in ln
+                ).replace('elif [ -n "$( echo $- | grep i )" ]; then', "elif true; then")
+                runner = self.cfg_dir / "v139_runner.sh"
+                runner.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+
+                # Mock kubeconfig with prod context + custom namespace
+                kcfg = self.cfg_dir / "kubeconfig"
+                kcfg.write_text(
+                    "apiVersion: v1\n"
+                    "current-context: gke_myproj_us-east1_prod-cluster\n"
+                    "contexts:\n"
+                    "- name: dev-cluster\n"
+                    "  context:\n"
+                    "    namespace: dev\n"
+                    "- name: gke_myproj_us-east1_prod-cluster\n"
+                    "  context:\n"
+                    "    namespace: payments\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                jj_dir = self.cfg_dir / "my folder" / "jjproj"
+                (jj_dir / ".jj").mkdir(parents=True, exist_ok=True)
+
+                cmd = (
+                    f'source "{runner}"; '
+                    f'KUBECONFIG="{kcfg}" getKube; echo ""; '
+                    '_ssp_shorten_path_fish "/etc/systemd/system"; echo "FISH=$_SSP_FISH_PATH"; '
+                    f'cd "{jj_dir}"; '
+                    'OSC7_OUT="$(_ssp_osc7_emit)"; [[ "$OSC7_OUT" == *"]7;file://"* && "$OSC7_OUT" == *"my%20folder"* ]] && echo "OSC7_OK"; '
+                    'SSP_SSH_HOST_COLOR=true SSP_FORCE_SSH_COLOR=1 HOSTNAME=api-prod-01 _ssp_host_color_var; echo "HOST_PROD=$_SSP_SSH_HOST_BG"; '
+                    'SSP_SSH_HOST_COLOR=true SSP_FORCE_SSH_COLOR=1 HOSTNAME=api-staging-02 _ssp_host_color_var; echo "HOST_STG=$_SSP_SSH_HOST_BG"; '
+                    'SSP_SSH_HOST_COLOR=true SSP_FORCE_SSH_COLOR=1 HOSTNAME=worker-42 _ssp_host_color_var; [[ -n "$_SSP_SSH_HOST_BG" ]] && echo "HOST_HASH_OK"; '
+                    'SSP_GIT_DYNAMIC_COLOR=true git_branch="main ◔" _ssp_dyn_colors_var GIT; echo "GIT_DIRTY=${_SSP_EL_C[1]}"; '
+                    'SSP_GIT_DYNAMIC_COLOR=true git_branch="main | REBASE 1/3" _ssp_dyn_colors_var GIT; echo "GIT_REBASE=${_SSP_EL_C[1]}"; '
+                    'kube="🚨 ☸ prod-cluster (payments)" _ssp_dyn_colors_var KUBE; echo "KUBE_PROD_BG=${_SSP_EL_C[1]}"; '
+                    'JJ_OUT="$(getJj)"; [[ "$JJ_OUT" == *"🥋"* ]] && echo "JJ_OK"; '
+                    'SYNTH_CUSTOM_BADGE="VPN:BR" getCustom; echo ""; '
+                    'SSP_NOTIFY_DURATION_SEC=5 SSP_FORCE_NOTIFY=1; '
+                    'if [[ -n "${EPOCHREALTIME:-}" ]]; then _SSP_CMD_START_MS=$(( ${EPOCHREALTIME/./} / 1000 - 7500 )); else SECONDS=20; _SSP_CMD_START_MS=12500; fi; '
+                    'NOTIF_OUT="$(prompt_command_hook)"; [[ "$NOTIF_OUT" == *"]9;synth-shell:"* || "$NOTIF_OUT" == *"]99;"* ]] && echo "NOTIFY_OK"'
+                )
+                r_bash = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, check=False)
+                self.assertEqual(r_bash.returncode, 0, msg=r_bash.stderr)
+                out = r_bash.stdout
+                self.assertIn("🚨 ☸ prod-cluster (payments)", out)
+                self.assertIn("FISH=/e/s/system", out)
+                self.assertIn("OSC7_OK", out)
+                self.assertIn("HOST_PROD=196", out)
+                self.assertIn("HOST_STG=214", out)
+                self.assertIn("HOST_HASH_OK", out)
+                self.assertIn("GIT_DIRTY=214", out)
+                self.assertIn("GIT_REBASE=196", out)
+                self.assertIn("KUBE_PROD_BG=196", out)
+                self.assertIn("JJ_OK", out)
+                self.assertIn("VPN:BR", out)
+                self.assertIn("NOTIFY_OK", out)
+
+        # 5. Web Studio HTTP endpoints `/api/export-starship` & `/api/auto-theme`
+        httpd = server.create_studio_server("127.0.0.1", 0, config_dir=self.cfg_dir)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            req_st = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/export-starship",
+                data=json.dumps({"output": str(self.cfg_dir / "web-starship.toml")}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_st) as r_s:
+                self.assertTrue(json.loads(r_s.read().decode("utf-8"))["ok"])
+
+            req_at = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/auto-theme",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_at) as r_a:
+                self.assertTrue(json.loads(r_a.read().decode("utf-8"))["ok"])
         finally:
             httpd.shutdown()
             httpd.server_close()

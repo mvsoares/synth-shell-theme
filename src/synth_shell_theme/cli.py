@@ -12,6 +12,7 @@ from synth_shell_theme import __version__
 from synth_shell_theme.core import (
     VALID_FONT_EFFECTS,
     apply_ascii_safe_mode,
+    apply_auto_system_theme,
     apply_layout_options,
     apply_separators,
     apply_theme,
@@ -32,7 +33,12 @@ from synth_shell_theme.core import (
     sync_root_config,
     toggle_light_dark_theme,
 )
-from synth_shell_theme.ecosystem import import_external_theme, sync_ecosystem
+from synth_shell_theme.ecosystem import (
+    export_starship_toml,
+    import_external_theme,
+    ssh_install_remote,
+    sync_ecosystem,
+)
 from synth_shell_theme.patches import (
     apply_runtime_patches,
     inspect_patches,
@@ -135,6 +141,7 @@ def _cmd_doctor(as_json: bool = False) -> int:
     print(f"  {BOLD}Runtime Patches & Optimizations:{RESET}")
     patch_labels = [
         ("kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"),
+        ("kube_namespace_prod", "Kubernetes namespace + automatic 🚨 prod cluster red warning"),
         ("git_single_pass", "Single-pass `git status --porcelain -b` (4x speedup)"),
         ("git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"),
         ("git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M) with zero extra forks"),
@@ -147,6 +154,8 @@ def _cmd_doctor(as_json: bool = False) -> int:
         ("v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"),
         ("v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT top bar + OSC 133"),
         ("osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"),
+        ("osc7_cwd", "OSC 7 CWD reporting (new tabs & splits inherit directory)"),
+        ("v139_smart_features", "v1.3.9 smart colors (Git/SSH), SUDO/JJ/CUSTOM, Fish PWD & OSC 9 notify"),
         ("terminal_sanitize", "Auto-sanitize leaked SSH/TUI mouse tracking & focus reporting on prompt"),
         ("right_prompt", "Right-aligned top bar (`right_format` + connector fill line)"),
         ("responsive_width", "Responsive compact layout on narrow tmux/VS Code splits (<90 cols)"),
@@ -427,6 +436,42 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Exported standalone static Web Studio demo to {out_html}")
             return 0
 
+        if sub in ("export-starship", "starship"):
+            es_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme export-starship",
+                description="Export the active theme & dual Powerline separators to a starship.toml preset.",
+            )
+            es_parser.add_argument("output", nargs="?", default="~/.config/starship.toml", help="Destination starship.toml path")
+            es_args = es_parser.parse_args(rest)
+            res_es = export_starship_toml(Path(es_args.output))
+            print(f"Exported Starship preset ({res_es['theme']}) -> {res_es['dest']}")
+            return 0
+
+        if sub in ("ssh-install", "ssh-deploy"):
+            ssh_parser = argparse.ArgumentParser(
+                prog="synth-shell-theme ssh-install",
+                description="Deploy patched synth-shell-prompt.sh + active config to a remote host over SSH (no Python/Git required remotely).",
+            )
+            ssh_parser.add_argument("target", help="SSH destination (e.g. user@server)")
+            ssh_parser.add_argument("-p", "--port", type=int, default=None, help="SSH port")
+            ssh_parser.add_argument("--ascii-safe", action="store_true", help="Convert separators & Git symbols to ASCII-safe for remote host")
+            ssh_parser.add_argument("--no-host-color", action="store_true", help="Do not enable automatic SSH hostname color on remote host")
+            ssh_parser.add_argument("--dry-run", action="store_true", help="Build deployment payload without connecting over SSH")
+            s_args = ssh_parser.parse_args(rest)
+            res_ssh = ssh_install_remote(
+                target=s_args.target,
+                ascii_safe=s_args.ascii_safe,
+                ssh_port=s_args.port,
+                ssh_host_color=not s_args.no_host_color,
+                dry_run=s_args.dry_run,
+            )
+            mode_lbl = "[DRY-RUN] " if res_ssh["dry_run"] else ""
+            print(
+                f"{mode_lbl}Deployed synth-shell prompt to {res_ssh['target']} "
+                f"(script={res_ssh['script_bytes']}B, config={res_ssh['config_bytes']}B, ascii_safe={res_ssh['ascii_safe']})"
+            )
+            return 0
+
         if sub in ("bench", "benchmark"):
             bench_parser = argparse.ArgumentParser(
                 prog="synth-shell-theme bench",
@@ -524,8 +569,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--right-fill", default=None, metavar="CHAR", help='Connector character between left & right prompt bars (default: "─")')
     parser.add_argument("--osc133", dest="osc133", action="store_true", default=None, help="Enable OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)")
     parser.add_argument("--no-osc133", dest="osc133", action="store_false", help="Disable OSC 133 semantic prompt markers")
+    parser.add_argument("--osc7", dest="osc7", action="store_true", default=None, help="Enable OSC 7 CWD reporting so new tabs/splits inherit directory")
+    parser.add_argument("--no-osc7", dest="osc7", action="store_false", help="Disable OSC 7 CWD reporting")
     parser.add_argument("--terminal-sanitize", dest="terminal_sanitize", action="store_true", default=None, help="Auto-disable leaked SSH/TUI mouse tracking & focus reporting on prompt return")
     parser.add_argument("--no-terminal-sanitize", dest="terminal_sanitize", action="store_false", help="Disable automatic terminal mode sanitization on prompt return")
+    parser.add_argument("--kube-ns", dest="kube_ns", action="store_true", default=None, help="Show active Kubernetes namespace alongside context")
+    parser.add_argument("--no-kube-ns", dest="kube_ns", action="store_false", help="Hide Kubernetes namespace")
+    parser.add_argument("--kube-prod-warn", dest="kube_prod_warn", action="store_true", default=None, help="Highlight production Kubernetes contexts in red with 🚨")
+    parser.add_argument("--no-kube-prod-warn", dest="kube_prod_warn", action="store_false", help="Disable production Kubernetes red warning highlight")
+    parser.add_argument("--kube-prod-pattern", default=None, metavar="REGEX", help='Regex matching production kube contexts/namespaces (default: "prod|production|prd|live")')
+    parser.add_argument("--git-dynamic-color", dest="git_dynamic_color", action="store_true", default=None, help="Dynamically color GIT segment amber when dirty & red on rebase/merge")
+    parser.add_argument("--no-git-dynamic-color", dest="git_dynamic_color", action="store_false", help="Keep static theme color for GIT segment")
+    parser.add_argument("--ssh-host-color", dest="ssh_host_color", action="store_true", default=None, help="Auto-color HOST segment by hostname hash / prod-stg rule over SSH")
+    parser.add_argument("--no-ssh-host-color", dest="ssh_host_color", action="store_false", help="Keep static theme color for HOST segment over SSH")
+    parser.add_argument("--pwd-style", choices=("default", "fish"), default=None, help="Path shortening style: default or fish (~/p/repo)")
+    parser.add_argument("--notify-sec", type=int, default=None, metavar="SEC", help="Emit OSC 9/99 desktop notification when command exceeds SEC seconds (0=off)")
+    parser.add_argument("--custom-badge", default=None, metavar="TEXT", help='Static text for CUSTOM segment (or set $SYNTH_CUSTOM_BADGE dynamically)')
+    parser.add_argument("--auto-theme", action="store_true", help="Auto-detect OS dark/light mode and apply configured Dark or Light theme")
     parser.add_argument("--git-state", dest="git_state", action="store_true", default=None, help="Show Git rebase/merge/cherry-pick/bisect & worktree state")
     parser.add_argument("--no-git-state", dest="git_state", action="store_false", help="Hide Git rebase/merge/worktree state")
     parser.add_argument("--battery-threshold", type=int, default=None, metavar="PCT", help="Only show BATTERY segment at or below PCT%% (default: 100)")
@@ -650,7 +710,14 @@ def main(argv: list[str] | None = None) -> int:
     did_non_interactive = False
     chosen_theme: dict[str, object] | None = None
 
-    if args.toggle_theme:
+    if args.auto_theme:
+        res_auto = apply_auto_system_theme(light_theme=args.light_theme, dark_theme=args.dark_theme)
+        print(
+            f"Auto-detected OS {res_auto['detected_scheme']} mode -> applied "
+            f"{BOLD}{res_auto['theme']}{RESET} ({res_auto['config_path']})"
+        )
+        did_non_interactive = True
+    elif args.toggle_theme:
         res_tog = toggle_light_dark_theme(light_slug=args.light_theme, dark_slug=args.dark_theme)
         print(f"Toggled to {res_tog['mode']} theme: {BOLD}{res_tog['theme']}{RESET} ({res_tog['config_path']})")
         did_non_interactive = True
@@ -707,7 +774,16 @@ def main(argv: list[str] | None = None) -> int:
             args.right_format,
             args.right_fill,
             args.osc133,
+            args.osc7,
             args.terminal_sanitize,
+            args.kube_ns,
+            args.kube_prod_warn,
+            args.kube_prod_pattern,
+            args.git_dynamic_color,
+            args.ssh_host_color,
+            args.pwd_style,
+            args.notify_sec,
+            args.custom_badge,
             args.git_state,
             args.battery_threshold,
             args.two_line,
@@ -735,7 +811,16 @@ def main(argv: list[str] | None = None) -> int:
             right_format_str=args.right_format,
             right_fill_char=args.right_fill,
             enable_osc133=args.osc133,
+            enable_osc7=args.osc7,
             enable_terminal_sanitize=args.terminal_sanitize,
+            kube_show_namespace=args.kube_ns,
+            kube_prod_warning=args.kube_prod_warn,
+            kube_prod_pattern=args.kube_prod_pattern,
+            git_dynamic_color=args.git_dynamic_color,
+            ssh_host_color=args.ssh_host_color,
+            pwd_style=args.pwd_style,
+            notify_duration_sec=args.notify_sec,
+            custom_segment_text=args.custom_badge,
             git_show_state=args.git_state,
             battery_threshold=args.battery_threshold,
             new_line=args.two_line,
@@ -766,7 +851,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sync_ecosystem:
         res_eco = sync_ecosystem(theme=chosen_theme)
-        print(f"Synced ecosystem ({res_eco['theme']}) -> {res_eco['env_script']} & {res_eco['tmux_conf']}")
+        print(
+            f"Synced ecosystem ({res_eco['theme']}) -> "
+            f"{res_eco['env_script']}, {res_eco['tmux_conf']} & {res_eco['wezterm_lua']}"
+        )
         did_non_interactive = True
 
     if args.sync_greeter or args.greeter_monitors is not None or args.hide_swap:

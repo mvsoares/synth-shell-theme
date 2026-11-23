@@ -694,8 +694,39 @@
               <span>OSC 133 semantic markers (Ghostty/Kitty/WT/VS Code)</span>
             </label>
             <label class="toggle-label">
+              <input type="checkbox" id="chk-osc7" checked />
+              <span>OSC 7 CWD reporting (new tabs/splits inherit folder)</span>
+            </label>
+            <label class="toggle-label">
               <input type="checkbox" id="chk-term-sanitize" checked />
               <span>Auto-sanitize leaked SSH/TUI mouse tracking (<code>?1000l/?1003l/?1006l</code>)</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-kube-ns" checked />
+              <span>Kube namespace + 🚨 red prod warning</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-git-dyn" />
+              <span>Dynamic Git colors (amber dirty / red rebase)</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="chk-ssh-host-color" />
+              <span>SSH hostname auto-color</span>
+            </label>
+            <label class="toggle-label">
+              <span>PWD style:</span>
+              <select id="sel-pwd-style" style="background:#0b0e14;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:4px 8px;font-size:12px;">
+                <option value="default">default</option>
+                <option value="fish">fish (~/p/repo)</option>
+              </select>
+            </label>
+            <label class="toggle-label">
+              <span>Notify &gt; (s):</span>
+              <input type="text" id="inp-notify-sec" value="0" style="min-width:52px;width:52px;padding:4px 8px;font-size:12px;" title="Desktop OSC 9/99 notification for slow commands (0=off)" />
+            </label>
+            <label class="toggle-label">
+              <span>Custom badge:</span>
+              <input type="text" id="inp-custom-badge" placeholder="e.g. EU-WEST" style="min-width:96px;width:96px;padding:4px 8px;font-size:12px;" />
             </label>
             <label class="toggle-label">
               <input type="checkbox" id="chk-git-state" checked />
@@ -807,11 +838,13 @@
       <div class="settings-grid">
         <div class="panel-box">
           <h3>Root Prompt &amp; Ecosystem Color Sync</h3>
-          <p>Sync your active theme to <code>synth-shell-prompt.root.config</code>, plus generate <code>theme-env.sh</code> (<code>FZF_DEFAULT_OPTS</code> + <code>LS_COLORS</code>) &amp; <code>tmux-theme.conf</code>.</p>
+          <p>Sync your active theme to <code>synth-shell-prompt.root.config</code>, plus generate <code>theme-env.sh</code> (<code>FZF_DEFAULT_OPTS</code> + <code>LS_COLORS</code>), <code>tmux-theme.conf</code>, <code>wezterm-theme.lua</code> &amp; <code>starship.toml</code>.</p>
           <div id="root-sync-status" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="primary" id="btn-sync-root">Sync Active Theme to Root Config</button>
-            <button id="btn-sync-ecosystem">Sync Ecosystem (fzf + LS_COLORS + tmux)</button>
+            <button id="btn-sync-ecosystem">Sync Ecosystem (fzf + LS_COLORS + tmux + WezTerm)</button>
+            <button id="btn-export-starship">Export starship.toml</button>
+            <button id="btn-auto-theme">Match OS Light/Dark</button>
           </div>
         </div>
 
@@ -853,6 +886,15 @@
       rightSegments: [],
       rightFillChar: "─",
       enableOsc133: true,
+      enableOsc7: true,
+      enableTerminalSanitize: true,
+      kubeShowNamespace: true,
+      kubeProdWarning: true,
+      gitDynamicColor: false,
+      sshHostColor: false,
+      pwdStyle: "default",
+      notifyDurationSec: 0,
+      customSegmentText: "",
       gitShowState: true,
       batteryThreshold: 100,
       staticDemo: false,
@@ -905,7 +947,10 @@
       shlvl: "↳ L2",
       rust: "🦀 1.82",
       go: "🐹 1.23",
-      battery: "🔋 86%"
+      battery: "🔋 86%",
+      sudo: "🔓 sudo",
+      jj: "🥋 kqyx main",
+      custom: "★ EU-WEST"
     };
 
     function escapeHtml(str) {
@@ -1228,7 +1273,14 @@
       _renderDraggablePills("right-segment-toggles", "rightSegments", true);
       document.getElementById("inp-right-fill").value = state.rightFillChar || "─";
       document.getElementById("chk-osc133").checked = state.enableOsc133;
+      document.getElementById("chk-osc7").checked = state.enableOsc7;
       document.getElementById("chk-term-sanitize").checked = state.enableTerminalSanitize;
+      document.getElementById("chk-kube-ns").checked = state.kubeShowNamespace && state.kubeProdWarning;
+      document.getElementById("chk-git-dyn").checked = state.gitDynamicColor;
+      document.getElementById("chk-ssh-host-color").checked = state.sshHostColor;
+      document.getElementById("sel-pwd-style").value = state.pwdStyle || "default";
+      document.getElementById("inp-notify-sec").value = state.notifyDurationSec || 0;
+      document.getElementById("inp-custom-badge").value = state.customSegmentText || "";
       document.getElementById("chk-git-state").checked = state.gitShowState;
 
       document.getElementById("chk-two-line").checked = state.twoLine;
@@ -1255,6 +1307,7 @@
 
       const patchDefs = [
         ["kube_fast", "Zero-subshell Kubernetes reader + max_kube_char (no yq)"],
+        ["kube_namespace_prod", "Kubernetes namespace + automatic 🚨 prod cluster red warning"],
         ["git_single_pass", "Single-pass git status check (4x faster prompt)"],
         ["git_wsl_fast", "WSL2 /mnt/* fast-untracked + timeout + async cache + max_git_char"],
         ["git_ahead_behind_counts", "Exact Git ahead/behind counts (↑N ↓M)"],
@@ -1267,6 +1320,8 @@
         ["v12_segments", "v1.2 segments (JOBS, DIRENV, SHLVL/NIX, RUST, GO) + nounset safety"],
         ["v13_segments", "v1.3 BATTERY segment + Git state + RPROMPT + OSC 133"],
         ["osc133_semantic", "OSC 133 semantic prompt markers (Ghostty/Kitty/WezTerm/WT/VS Code)"],
+        ["osc7_cwd", "OSC 7 CWD reporting (new tabs & splits inherit directory)"],
+        ["v139_smart_features", "v1.3.9 smart colors (Git/SSH), SUDO/JJ/CUSTOM, Fish PWD & OSC 9 notify"],
         ["terminal_sanitize", "Auto-sanitize leaked SSH/TUI mouse tracking & focus reporting"],
         ["right_prompt", "Right-aligned top bar (right_format + connector line)"],
         ["responsive_width", "Responsive compact prompt on narrow tmux/VS Code splits"],
@@ -1373,7 +1428,15 @@
       }
       state.rightFillChar = String(srvState.right_fill_char || "─");
       state.enableOsc133 = srvState.enable_osc133 !== false;
+      state.enableOsc7 = srvState.enable_osc7 !== false;
       state.enableTerminalSanitize = srvState.enable_terminal_sanitize !== false;
+      state.kubeShowNamespace = srvState.kube_show_namespace !== false;
+      state.kubeProdWarning = srvState.kube_prod_warning !== false;
+      state.gitDynamicColor = Boolean(srvState.git_dynamic_color);
+      state.sshHostColor = Boolean(srvState.ssh_host_color);
+      state.pwdStyle = String(srvState.pwd_style || "default");
+      state.notifyDurationSec = Number(srvState.notify_duration_sec || 0);
+      state.customSegmentText = String(srvState.custom_segment_text || "");
       state.gitShowState = srvState.git_show_state !== false;
       state.batteryThreshold = Number(srvState.battery_threshold || 100);
       state.twoLine = Boolean(srvState.enable_command_on_new_line);
@@ -1561,14 +1624,36 @@
       renderWorkbench();
     });
     document.getElementById("chk-osc133").addEventListener("change", e => { state.enableOsc133 = e.target.checked; });
+    document.getElementById("chk-osc7").addEventListener("change", e => { state.enableOsc7 = e.target.checked; });
     document.getElementById("chk-term-sanitize").addEventListener("change", e => { state.enableTerminalSanitize = e.target.checked; });
+    document.getElementById("chk-kube-ns").addEventListener("change", e => { state.kubeShowNamespace = e.target.checked; state.kubeProdWarning = e.target.checked; });
+    document.getElementById("chk-git-dyn").addEventListener("change", e => { state.gitDynamicColor = e.target.checked; });
+    document.getElementById("chk-ssh-host-color").addEventListener("change", e => { state.sshHostColor = e.target.checked; });
+    document.getElementById("sel-pwd-style").addEventListener("change", e => { state.pwdStyle = e.target.value; });
     document.getElementById("chk-git-state").addEventListener("change", e => { state.gitShowState = e.target.checked; });
 
     document.getElementById("btn-sync-ecosystem").addEventListener("click", async () => {
       if (state.staticDemo) { showToast("Run locally: synth-shell-theme --sync-ecosystem"); return; }
       const resp = await fetch("/api/sync-ecosystem", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await resp.json();
-      if (data.ok) showToast(`Synced fzf, LS_COLORS & tmux (${data.result.theme})!`);
+      if (data.ok) showToast(`Synced fzf, LS_COLORS, tmux & WezTerm (${data.result.theme})!`);
+    });
+
+    document.getElementById("btn-export-starship").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme export-starship"); return; }
+      const resp = await fetch("/api/export-starship", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      if (data.ok) showToast(`Exported starship.toml (${data.result.theme}) -> ${data.result.dest}`);
+    });
+
+    document.getElementById("btn-auto-theme").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --auto-theme"); return; }
+      const resp = await fetch("/api/auto-theme", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await resp.json();
+      if (data.ok) {
+        syncFromServerState(data.state, data.backups);
+        showToast(`Matched OS ${data.result.detected_scheme} mode -> ${data.result.theme}`);
+      }
     });
 
     document.getElementById("btn-copy-reload").addEventListener("click", async () => {
@@ -1734,7 +1819,15 @@
         right_format: state.rightSegments,
         right_fill_char: state.rightFillChar,
         enable_osc133: state.enableOsc133,
+        enable_osc7: state.enableOsc7,
         enable_terminal_sanitize: state.enableTerminalSanitize,
+        kube_show_namespace: state.kubeShowNamespace,
+        kube_prod_warning: state.kubeProdWarning,
+        git_dynamic_color: state.gitDynamicColor,
+        ssh_host_color: state.sshHostColor,
+        pwd_style: state.pwdStyle,
+        notify_duration_sec: Number(document.getElementById("inp-notify-sec").value || 0),
+        custom_segment_text: document.getElementById("inp-custom-badge").value || "",
         git_show_state: state.gitShowState,
         enable_command_on_new_line: state.twoLine,
         enable_vertical_padding: state.verticalPadding,

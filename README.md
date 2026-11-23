@@ -23,13 +23,13 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
 - **Side-by-Side Terminal UI (`synth-shell-theme`)**: 2-column 256-color live terminal preview rendering both 3-segment and 6-segment DevOps prompts (`host · pwd · git · pyenv · tf · kube`), live search (`/term`), high-contrast white-text mode (`[f]`), and 1-key undo (`[u]`).
 - **Dual Powerline Separator Editor (`synth-shell-separator` or `synth-shell-theme sep`)**: Mix independent **internal** (`separator_char`) and **ending** (`separator_char_end`) glyphs across **48 curated presets** in 6 categories plus a **60+ Nerd Font Character Matrix**.
 - **Live Browser Web Studio (`synth-shell-theme web`)**: Local HTTP studio (`http://127.0.0.1:7778`) — also tryable as a static browser showcase (`synth-shell-theme export-web docs/index.html`) — with a sticky live workbench (Left + Right `RPROMPT` bars), drag-and-drop segment reordering across 21 segments, click-to-edit inline segment colors, 1-click **Copy CLI** sharing, custom TrueColor theme creator, and backup history.
-- **Unified Color Ecosystem & External Theme Importer**: Sync your active palette to `fzf` (`FZF_DEFAULT_OPTS`), `LS_COLORS`, and `tmux` (`--sync-ecosystem`), or import palettes directly from **Pywal**, **Base16 YAML**, **Ghostty**, **Kitty**, **Alacritty**, and **Windows Terminal** (`synth-shell-theme import-theme`).
+- **Unified Color Ecosystem, Starship Export, SSH Deploy & External Theme Importer**: Sync your active palette to `fzf` (`FZF_DEFAULT_OPTS`), `LS_COLORS`, `tmux`, and **WezTerm** (`wezterm-theme.lua`) via `--sync-ecosystem`, export any of the 64 themes + dual separators to **`starship.toml`** (`export-starship`), deploy your patched prompt to remote Linux servers in 1 command without Python/Git (`ssh-install user@host`), or import palettes from **Pywal**, **Base16 YAML**, **Ghostty**, **Kitty**, **Alacritty**, and **Windows Terminal** (`import-theme`).
 - **Idempotent Runtime, Speed & Modern Terminal Patches (`synth-shell-theme init`)**:
   1. **Zero-fork segment renderer (`zero_fork_render`)**: Eliminates ~15–25 subshell forks per `Enter` via pure-Bash color/format variable lookups.
-  2. **Zero-subshell Kubernetes context (`kube_fast`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, removes `yq` dependency, shortens GKE context names, respects `max_kube_char`).
-  3. **Single-pass Git + WSL2/Monorepo + Advanced State (`git_single_pass` / `git_wsl_fast` / `git_advanced_state`)**: Consolidates 3 `git status` calls into one, shows exact `↑N ↓M` counts plus `REBASE`, `MERGE`, `CHERRY`, `BISECT`, and `worktree` (`⎇`) state in pure Bash, auto-skips untracked scans on WSL2 `/mnt/*`, supports `--git-timeout`, optional `--async-git` background cache (`/dev/shm`), and `--max-git` branch truncation.
-  4. **Telemetry, Dev & Battery segments (`v11_segments` / `v12_segments` / `v13_segments`)**: Zero-fork `STATUS`, `DURATION`, `AWS`, `GCP`, `DOCKER`, `NODE`, `SSH`, `JOBS`, `DIRENV`, `SHLVL`/`NIX`, `RUST`, `GO`, and `BATTERY`, plus `prompt_prefix`, `font_effect` (`bold`/`regular`/`italic`/`dim`), and OSC-0 terminal tab titles.
-  5. **Right-Aligned Top Prompt (`right_prompt`) & OSC 133 Semantic Integration (`osc133_semantic`)**: Pure-Bash `RPROMPT` top bar (`--right-format`, `--right-fill`) and native `OSC 133;A/B/C/D;<exit>` prompt navigation for Ghostty, Kitty, WezTerm, Windows Terminal, iTerm2, and VS Code.
+  2. **Zero-subshell Kubernetes context, namespace & 🚨 prod warning (`kube_fast` / `kube_namespace_prod`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, removes `yq` dependency, shortens GKE context names, appends active `(namespace)`, and highlights production clusters in red with `🚨`).
+  3. **Single-pass Git + WSL2/Monorepo + Advanced State + Dynamic Colors (`git_single_pass` / `git_wsl_fast` / `git_advanced_state`)**: Consolidates 3 `git status` calls into one, shows exact `↑N ↓M` counts plus `REBASE`, `MERGE`, `CHERRY`, `BISECT`, and `worktree` (`⎇`) state in pure Bash, optionally colors `GIT` dynamically (amber dirty / red rebase), auto-skips untracked scans on WSL2 `/mnt/*`, supports `--git-timeout`, optional `--async-git` background cache (`/dev/shm`), and `--max-git` branch truncation.
+  4. **24 Zero-Fork Telemetry, Dev, VCS & Custom Segments**: `USER`, `HOST` (with optional SSH hostname color hashing), `PWD` (with `--pwd-style fish`), `GIT`, `JJ` (Jujutsu VCS), `PYENV`, `TF`, `KUBE`, `CLOCK`, `STATUS`, `DURATION`, `AWS`, `GCP`, `DOCKER`, `NODE`, `SSH`, `JOBS`, `DIRENV`, `SHLVL`/`NIX`, `RUST`, `GO`, `BATTERY`, `SUDO`, and `CUSTOM`.
+  5. **Right-Aligned Top Prompt (`right_prompt`), OSC 133, OSC 7 CWD & OSC 9/99 Notifications**: Pure-Bash `RPROMPT` top bar (`--right-format`, `--right-fill`), native `OSC 133;A/B/C/D;<exit>` prompt navigation, `OSC 7` directory inheritance for new tabs/splits in WezTerm/Ghostty/Kitty/Windows Terminal, and desktop notifications for slow commands (`--notify-sec`).
   6. **Accurate Virtualenv & Conda (`pyenv_enhanced`)**: Pure-Bash `$VIRTUAL_ENV_PROMPT`, `pyvenv.cfg` `prompt`, `$CONDA_DEFAULT_ENV`, parent-dir naming for `.venv`, and `--max-pyenv` truncation.
   7. **Independent Ending Separator (`dual_separator`) & 256-Color Parity (`color_256_parity`)**: Supports `separator_char_end`, 0–255 & all 16 named colors, and `italic`/`regular` text styles.
   8. **Safe `PROMPT_COMMAND` Chaining & TrueColor 24-bit (`hook_chaining` / `truecolor_24bit`)**: Chains `PROMPT_COMMAND` (Bash 5.1+ arrays & strings) and moves color reset to `PS0` (no `trap DEBUG` hijacking — 100% compatible with `direnv`, `zoxide`, `atuin`, `ble.sh`, `mise`, and VS Code), supports exact `#RRGGBB` TrueColor with automatic 256-color fallback, responsive compact layout on narrow `tmux`/VS Code splits (`--compact-width`), and `set -u` safety.
@@ -179,11 +179,14 @@ synth-shell-theme --toggle-theme
 synth-shell-theme bench --runs 20
 eval "$(synth-shell-theme completion bash)"
 
-# Right-aligned top bar (RPROMPT), OSC 133 semantic prompt & Battery
-synth-shell-theme --right-format "CLOCK BATTERY DURATION" --right-fill "─" --osc133
+# Right-aligned top bar (RPROMPT), OSC 133/7, Fish PWD, dynamic Git/SSH colors & notifications
+synth-shell-theme --right-format "CLOCK BATTERY DURATION" --right-fill "─" --osc133 --osc7
+synth-shell-theme --pwd-style fish --git-dynamic-color --ssh-host-color --notify-sec 30 --auto-theme
 
-# Unified ecosystem sync (fzf + LS_COLORS + tmux) & external palette importer
+# Unified ecosystem sync (fzf + LS_COLORS + tmux + WezTerm), Starship export, SSH deploy & palette import
 synth-shell-theme --sync-ecosystem
+synth-shell-theme export-starship ~/.config/starship.toml
+synth-shell-theme ssh-install user@my-server --ascii-safe
 synth-shell-theme import-theme --pywal
 synth-shell-theme import-theme ~/.config/ghostty/themes/tokyo-night
 

@@ -265,6 +265,62 @@ def detect_nerd_fonts() -> dict[str, object]:
     }
 
 
+def detect_system_color_scheme() -> str:
+    """Detect OS dark/light preference (`'dark'` or `'light'`, defaulting to `'dark'`)."""
+    os_name = detect_os()
+    if os_name == "macos":
+        try:
+            r = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                check=False,
+            )
+            return "dark" if r.returncode == 0 and "dark" in r.stdout.lower() else "light"
+        except (OSError, subprocess.SubprocessError):
+            return "dark"
+    if os_name == "windows":
+        try:
+            import winreg  # type: ignore[import-not-found]
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return "light" if int(val) == 1 else "dark"
+        except Exception:
+            return "dark"
+    # Linux: GNOME gsettings -> KDE kdeglobals fallback
+    if shutil.which("gsettings"):
+        try:
+            r = subprocess.run(
+                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                check=False,
+            )
+            out = r.stdout.strip().lower()
+            if "light" in out:
+                return "light"
+            if "dark" in out:
+                return "dark"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    kde_cfg = Path.home() / ".config" / "kdeglobals"
+    if kde_cfg.is_file():
+        try:
+            txt = kde_cfg.read_text(encoding="utf-8", errors="replace").lower()
+            if "breezelight" in txt or "colorscheme=light" in txt:
+                return "light"
+        except OSError:
+            pass
+    return "dark"
+
+
 def system_summary(config_dir: Path | None = None) -> dict[str, object]:
     """Return environment and installation diagnostics for `synth-shell-theme doctor`."""
     base = config_dir if config_dir is not None else get_config_dir()
@@ -303,4 +359,5 @@ def system_summary(config_dir: Path | None = None) -> dict[str, object]:
         "locale": detect_utf8_locale(),
         "nerd_fonts": nf,
         "terminal": detect_terminal_capabilities(nf),
+        "system_theme": detect_system_color_scheme(),
     }

@@ -15,6 +15,7 @@ from synth_shell_theme.core import (
     VALID_FONT_EFFECTS,
     VALID_FORMAT_TOKENS,
     apply_ascii_safe_mode,
+    apply_auto_system_theme,
     apply_layout_options,
     apply_separators,
     apply_theme,
@@ -28,7 +29,7 @@ from synth_shell_theme.core import (
     sync_root_config,
     toggle_light_dark_theme,
 )
-from synth_shell_theme.ecosystem import sync_ecosystem
+from synth_shell_theme.ecosystem import export_starship_toml, sync_ecosystem
 from synth_shell_theme.patches import apply_runtime_patches
 from synth_shell_theme.paths import (
     detect_nerd_fonts,
@@ -128,7 +129,16 @@ def handle_apply_payload(
         "right_format",
         "right_fill_char",
         "enable_osc133",
+        "enable_osc7",
         "enable_terminal_sanitize",
+        "kube_show_namespace",
+        "kube_prod_warning",
+        "kube_prod_pattern",
+        "git_dynamic_color",
+        "ssh_host_color",
+        "pwd_style",
+        "notify_duration_sec",
+        "custom_segment_text",
         "git_show_state",
         "battery_threshold",
         "enable_command_on_new_line",
@@ -172,9 +182,18 @@ def handle_apply_payload(
             right_format_str=rfmt_str,
             right_fill_char=str(payload["right_fill_char"]) if "right_fill_char" in payload else None,
             enable_osc133=bool(payload["enable_osc133"]) if "enable_osc133" in payload else None,
+            enable_osc7=bool(payload["enable_osc7"]) if "enable_osc7" in payload else None,
             enable_terminal_sanitize=(
                 bool(payload["enable_terminal_sanitize"]) if "enable_terminal_sanitize" in payload else None
             ),
+            kube_show_namespace=bool(payload["kube_show_namespace"]) if "kube_show_namespace" in payload else None,
+            kube_prod_warning=bool(payload["kube_prod_warning"]) if "kube_prod_warning" in payload else None,
+            kube_prod_pattern=str(payload["kube_prod_pattern"]) if "kube_prod_pattern" in payload else None,
+            git_dynamic_color=bool(payload["git_dynamic_color"]) if "git_dynamic_color" in payload else None,
+            ssh_host_color=bool(payload["ssh_host_color"]) if "ssh_host_color" in payload else None,
+            pwd_style=str(payload["pwd_style"]) if "pwd_style" in payload else None,
+            notify_duration_sec=int(payload["notify_duration_sec"]) if "notify_duration_sec" in payload else None,  # type: ignore[arg-type]
+            custom_segment_text=str(payload["custom_segment_text"]) if "custom_segment_text" in payload else None,
             git_show_state=bool(payload["git_show_state"]) if "git_show_state" in payload else None,
             battery_threshold=int(payload["battery_threshold"]) if "battery_threshold" in payload else None,  # type: ignore[arg-type]
             new_line=bool(payload["enable_command_on_new_line"]) if "enable_command_on_new_line" in payload else None,
@@ -401,6 +420,24 @@ def create_studio_server(
                             "state": read_current_state(themes, config_dir),
                         }
                     )
+                    return
+                if route == "/api/auto-theme":
+                    res_at = apply_auto_system_theme(config_dir=config_dir)
+                    themes = load_themes(config_dir=config_dir)
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "result": res_at,
+                            "state": read_current_state(themes, config_dir),
+                            "backups": list_backups(config_dir),
+                        }
+                    )
+                    return
+                if route == "/api/export-starship":
+                    dest_str = str(body.get("output") or "").strip()
+                    dest_p = Path(dest_str) if dest_str else (config_dir or Path.home() / ".config") / "starship.toml"
+                    res_st = export_starship_toml(dest_p, config_dir=config_dir)
+                    self._send_json({"ok": True, "result": res_st})
                     return
                 if route == "/api/restore":
                     target = body.get("target", 1)

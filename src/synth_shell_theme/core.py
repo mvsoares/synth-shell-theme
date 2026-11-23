@@ -60,6 +60,9 @@ VALID_FORMAT_TOKENS: tuple[str, ...] = (
     "RUST",
     "GO",
     "BATTERY",
+    "SUDO",
+    "JJ",
+    "CUSTOM",
 )
 
 VALID_FONT_EFFECTS: tuple[str, ...] = (
@@ -420,7 +423,16 @@ def read_current_state(
     right_format_str = ""
     right_fill_char = "─"
     enable_osc133 = True
+    enable_osc7 = True
     enable_terminal_sanitize = True
+    kube_show_namespace = True
+    kube_prod_warning = True
+    kube_prod_pattern = "prod|production|prd|live"
+    git_dynamic_color = False
+    ssh_host_color = False
+    pwd_style = "default"
+    notify_duration_sec = 0
+    custom_segment_text = ""
     git_show_state = True
     battery_threshold = 100
     new_line = True
@@ -461,8 +473,26 @@ def read_current_state(
                 right_fill_char = val or " "
             elif key == "enable_osc133":
                 enable_osc133 = val.lower() in ("true", "1", "yes")
+            elif key == "enable_osc7":
+                enable_osc7 = val.lower() in ("true", "1", "yes")
             elif key == "enable_terminal_sanitize":
                 enable_terminal_sanitize = val.lower() in ("true", "1", "yes")
+            elif key == "kube_show_namespace":
+                kube_show_namespace = val.lower() in ("true", "1", "yes")
+            elif key == "kube_prod_warning":
+                kube_prod_warning = val.lower() in ("true", "1", "yes")
+            elif key == "kube_prod_pattern":
+                kube_prod_pattern = val or "prod|production|prd|live"
+            elif key == "git_dynamic_color":
+                git_dynamic_color = val.lower() in ("true", "1", "yes")
+            elif key == "ssh_host_color":
+                ssh_host_color = val.lower() in ("true", "1", "yes")
+            elif key == "pwd_style":
+                pwd_style = val.lower() if val.lower() in ("default", "fish") else "default"
+            elif key == "notify_duration_sec" and val.isdigit():
+                notify_duration_sec = int(val)
+            elif key == "custom_segment_text":
+                custom_segment_text = val
             elif key == "git_show_state":
                 git_show_state = val.lower() in ("true", "1", "yes")
             elif key == "battery_threshold" and val.isdigit():
@@ -541,7 +571,16 @@ def read_current_state(
         "right_format_segments": right_format_str.split() if right_format_str else [],
         "right_fill_char": right_fill_char,
         "enable_osc133": enable_osc133,
+        "enable_osc7": enable_osc7,
         "enable_terminal_sanitize": enable_terminal_sanitize,
+        "kube_show_namespace": kube_show_namespace,
+        "kube_prod_warning": kube_prod_warning,
+        "kube_prod_pattern": kube_prod_pattern,
+        "git_dynamic_color": git_dynamic_color,
+        "ssh_host_color": ssh_host_color,
+        "pwd_style": pwd_style,
+        "notify_duration_sec": notify_duration_sec,
+        "custom_segment_text": custom_segment_text,
         "git_show_state": git_show_state,
         "battery_threshold": battery_threshold,
         "enable_command_on_new_line": new_line,
@@ -751,7 +790,16 @@ def apply_layout_options(
     right_format_str: str | None = None,
     right_fill_char: str | None = None,
     enable_osc133: bool | None = None,
+    enable_osc7: bool | None = None,
     enable_terminal_sanitize: bool | None = None,
+    kube_show_namespace: bool | None = None,
+    kube_prod_warning: bool | None = None,
+    kube_prod_pattern: str | None = None,
+    git_dynamic_color: bool | None = None,
+    ssh_host_color: bool | None = None,
+    pwd_style: str | None = None,
+    notify_duration_sec: int | None = None,
+    custom_segment_text: str | None = None,
     git_show_state: bool | None = None,
     battery_threshold: int | None = None,
     new_line: bool | None = None,
@@ -800,8 +848,27 @@ def apply_layout_options(
         updates["right_fill_char"] = right_fill_char[:1] if right_fill_char else " "
     if enable_osc133 is not None:
         updates["enable_osc133"] = "true" if enable_osc133 else "false"
+    if enable_osc7 is not None:
+        updates["enable_osc7"] = "true" if enable_osc7 else "false"
     if enable_terminal_sanitize is not None:
         updates["enable_terminal_sanitize"] = "true" if enable_terminal_sanitize else "false"
+    if kube_show_namespace is not None:
+        updates["kube_show_namespace"] = "true" if kube_show_namespace else "false"
+    if kube_prod_warning is not None:
+        updates["kube_prod_warning"] = "true" if kube_prod_warning else "false"
+    if kube_prod_pattern is not None and kube_prod_pattern.strip():
+        updates["kube_prod_pattern"] = kube_prod_pattern.strip()
+    if git_dynamic_color is not None:
+        updates["git_dynamic_color"] = "true" if git_dynamic_color else "false"
+    if ssh_host_color is not None:
+        updates["ssh_host_color"] = "true" if ssh_host_color else "false"
+    if pwd_style is not None:
+        ps = pwd_style.strip().lower()
+        updates["pwd_style"] = ps if ps in ("default", "fish") else "default"
+    if notify_duration_sec is not None:
+        updates["notify_duration_sec"] = str(max(0, min(3600, int(notify_duration_sec))))
+    if custom_segment_text is not None:
+        updates["custom_segment_text"] = custom_segment_text
     if git_show_state is not None:
         updates["git_show_state"] = "true" if git_show_state else "false"
     if battery_threshold is not None:
@@ -1113,7 +1180,16 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
         "right_format": state["right_format"],
         "right_fill_char": state["right_fill_char"],
         "enable_osc133": state["enable_osc133"],
+        "enable_osc7": state["enable_osc7"],
         "enable_terminal_sanitize": state["enable_terminal_sanitize"],
+        "kube_show_namespace": state["kube_show_namespace"],
+        "kube_prod_warning": state["kube_prod_warning"],
+        "kube_prod_pattern": state["kube_prod_pattern"],
+        "git_dynamic_color": state["git_dynamic_color"],
+        "ssh_host_color": state["ssh_host_color"],
+        "pwd_style": state["pwd_style"],
+        "notify_duration_sec": state["notify_duration_sec"],
+        "custom_segment_text": state["custom_segment_text"],
         "git_show_state": state["git_show_state"],
         "battery_threshold": state["battery_threshold"],
         "enable_command_on_new_line": state["enable_command_on_new_line"],
@@ -1180,7 +1256,16 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
         right_format_str=str(data["right_format"]) if "right_format" in data else None,
         right_fill_char=str(data["right_fill_char"]) if "right_fill_char" in data else None,
         enable_osc133=bool(data["enable_osc133"]) if "enable_osc133" in data else None,
+        enable_osc7=bool(data["enable_osc7"]) if "enable_osc7" in data else None,
         enable_terminal_sanitize=bool(data["enable_terminal_sanitize"]) if "enable_terminal_sanitize" in data else None,
+        kube_show_namespace=bool(data["kube_show_namespace"]) if "kube_show_namespace" in data else None,
+        kube_prod_warning=bool(data["kube_prod_warning"]) if "kube_prod_warning" in data else None,
+        kube_prod_pattern=str(data["kube_prod_pattern"]) if "kube_prod_pattern" in data else None,
+        git_dynamic_color=bool(data["git_dynamic_color"]) if "git_dynamic_color" in data else None,
+        ssh_host_color=bool(data["ssh_host_color"]) if "ssh_host_color" in data else None,
+        pwd_style=str(data["pwd_style"]) if "pwd_style" in data else None,
+        notify_duration_sec=int(data["notify_duration_sec"]) if "notify_duration_sec" in data else None,
+        custom_segment_text=str(data["custom_segment_text"]) if "custom_segment_text" in data else None,
         git_show_state=bool(data["git_show_state"]) if "git_show_state" in data else None,
         battery_threshold=int(data["battery_threshold"]) if "battery_threshold" in data else None,
         new_line=bool(data["enable_command_on_new_line"]) if "enable_command_on_new_line" in data else None,
@@ -1255,6 +1340,35 @@ def toggle_light_dark_theme(
         "theme_id": res["theme_id"],
         "light_theme": str(light_t.get("name")),
         "dark_theme": str(dark_t.get("name")),
+        "backup": res["backup"],
+        "config_path": res["config_path"],
+    }
+
+
+def apply_auto_system_theme(
+    light_theme: str | None = None,
+    dark_theme: str | None = None,
+    config_dir: Path | None = None,
+) -> dict[str, object]:
+    """Detect OS dark/light preference and apply the corresponding configured theme."""
+    from synth_shell_theme.paths import detect_system_color_scheme
+
+    base = config_dir if config_dir is not None else get_config_dir()
+    catalog = load_themes(config_dir=base)
+    state = read_current_state(catalog, base)
+
+    scheme = detect_system_color_scheme()
+    light_choice = light_theme or str(state.get("light_theme") or "catppuccin-latte")
+    dark_choice = dark_theme or str(state.get("dark_theme") or "tokyo-night")
+    target_slug = light_choice if scheme == "light" else dark_choice
+    found, _ = find_theme(target_slug, catalog)
+    target_theme = found or catalog[0]
+
+    res = apply_theme(target_theme, config_dir=base)
+    return {
+        "detected_scheme": scheme,
+        "theme": res["theme"],
+        "theme_id": res["theme_id"],
         "backup": res["backup"],
         "config_path": res["config_path"],
     }
@@ -1388,8 +1502,8 @@ _synth_shell_theme_complete()
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
-    local subcmds="tui web studio sep init doctor bench export import import-theme export-web completion"
-    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --right-format --right-fill --osc133 --no-osc133 --terminal-sanitize --no-terminal-sanitize --git-state --no-git-state --battery-threshold --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --light-theme --dark-theme --sync-root --sync-greeter --sync-ecosystem --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
+    local subcmds="tui web studio sep init doctor bench export import import-theme export-web export-starship ssh-install completion"
+    local opts="--version --list --current --apply --force-white-text --keep-input --separators --palette --separator --dual --internal --end --format --right-format --right-fill --osc133 --no-osc133 --osc7 --no-osc7 --terminal-sanitize --no-terminal-sanitize --kube-ns --no-kube-ns --kube-prod-warn --no-kube-prod-warn --kube-prod-pattern --git-dynamic-color --no-git-dynamic-color --ssh-host-color --no-ssh-host-color --pwd-style --notify-sec --custom-badge --git-state --no-git-state --battery-threshold --two-line --single-line --max-pwd --max-git --max-pyenv --max-kube --compact-width --prefix --text-effect --terminal-title --no-terminal-title --fast-git-wsl --no-fast-git-wsl --git-timeout --async-git --no-async-git --git-counts --no-git-counts --min-duration --transient --no-transient --ascii-safe --toggle-theme --auto-theme --light-theme --dark-theme --sync-root --sync-greeter --sync-ecosystem --greeter-monitors --hide-swap --random --search --web --port --no-browser --backup --backups --restore --no-clear"
     local themes="{theme_slugs}"
     local seps="{sep_keys}"
     local segs="{seg_tokens}"
@@ -1505,7 +1619,16 @@ def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Pat
             "right_format_segments": ["KUBE", "DURATION", "CLOCK"],
             "right_fill_char": "─",
             "enable_osc133": True,
+            "enable_osc7": True,
             "enable_terminal_sanitize": True,
+            "kube_show_namespace": True,
+            "kube_prod_warning": True,
+            "kube_prod_pattern": "prod|production|prd|live",
+            "git_dynamic_color": False,
+            "ssh_host_color": False,
+            "pwd_style": "default",
+            "notify_duration_sec": 0,
+            "custom_segment_text": "",
             "git_show_state": True,
             "battery_threshold": 100,
             "enable_command_on_new_line": True,
@@ -1527,6 +1650,7 @@ def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Pat
             "root_config_exists": True,
             "patches": {
                 "kube_fast": True,
+                "kube_namespace_prod": True,
                 "git_single_pass": True,
                 "git_wsl_fast": True,
                 "git_ahead_behind_counts": True,
@@ -1539,6 +1663,8 @@ def export_static_studio(dest_path: Path, config_dir: Path | None = None) -> Pat
                 "v12_segments": True,
                 "v13_segments": True,
                 "osc133_semantic": True,
+                "osc7_cwd": True,
+                "v139_smart_features": True,
                 "terminal_sanitize": True,
                 "right_prompt": True,
                 "responsive_width": True,
