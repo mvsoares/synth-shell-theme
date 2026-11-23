@@ -1,4 +1,4 @@
-"""Local HTTP Web Studio server for synth-shell-theme (zero external dependencies, v1.1.0)."""
+"""Local HTTP Web Studio server for synth-shell-theme (zero external dependencies)."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def handle_apply_payload(
 ) -> dict[str, object]:
     """Apply theme, dual separators, layout, truncation, speed, and sync options atomically."""
     base = config_dir if config_dir is not None else get_config_dir()
-    themes = load_themes()
+    themes = load_themes(config_dir=base)
     bak = backup_config(base)
     applied: list[str] = []
     chosen_theme: dict[str, object] | None = None
@@ -295,8 +295,56 @@ def create_studio_server(
 
             self._send_json({"ok": False, "error": f"Unknown endpoint: {route}"}, HTTPStatus.NOT_FOUND)
 
+        def _validate_post_security(self) -> tuple[bool, str]:
+            """Block cross-origin CSRF / DNS-rebinding POST requests to the localhost Web Studio."""
+            ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if ctype != "application/json":
+                return False, "POST endpoints require Content-Type: application/json."
+
+            sec_fetch = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+            if sec_fetch and sec_fetch not in ("same-origin", "none"):
+                return False, f"Cross-site request blocked (Sec-Fetch-Site={sec_fetch})."
+
+            origin = (self.headers.get("Origin") or "").strip()
+            if origin:
+                parsed_origin = urlparse(origin)
+                allowed_hosts = {"127.0.0.1", "localhost", "::1", host}
+                if parsed_origin.hostname not in allowed_hosts:
+                    return False, f"Cross-origin request blocked (Origin={origin})."
+                bound_port = self.server.server_address[1]
+                if parsed_origin.port is not None and parsed_origin.port != bound_port:
+                    return False, f"Cross-port origin blocked (Origin={origin})."
+
+            return True, ""
+
+        def _resolve_safe_starship_dest(self, dest_str: str) -> Path:
+            """Restrict web-initiated Starship exports to `.toml` files inside `config_dir` or `~/.config`."""
+            allowed_roots = [
+                (config_dir if config_dir is not None else get_config_dir()).resolve(),
+                (Path.home() / ".config").resolve(),
+            ]
+            if not dest_str:
+                base_dir = config_dir if config_dir is not None else (Path.home() / ".config")
+                return (base_dir / "starship.toml").resolve()
+
+            candidate = Path(dest_str).expanduser().resolve()
+            if candidate.suffix.lower() != ".toml":
+                raise ValueError("Starship export destination must be a .toml file.")
+            if not any(
+                candidate == root or root in candidate.parents
+                for root in allowed_roots
+            ):
+                raise ValueError(
+                    "Starship export destination must reside inside the synth-shell config directory or ~/.config."
+                )
+            return candidate
+
         def do_POST(self) -> None:  # noqa: N802
             route = urlparse(self.path).path
+            ok_sec, sec_err = self._validate_post_security()
+            if not ok_sec:
+                self._send_json({"ok": False, "error": sec_err}, HTTPStatus.FORBIDDEN)
+                return
             try:
                 body = self._read_json_body()
                 if route == "/api/apply":
@@ -306,7 +354,7 @@ def create_studio_server(
                 if route == "/api/patches":
                     tune = bool(body.get("tune_defaults", False))
                     patch_res = apply_runtime_patches(config_dir=config_dir, tune_defaults=tune)
-                    themes = load_themes()
+                    themes = load_themes(config_dir=config_dir)
                     self._send_json(
                         {
                             "ok": True,
@@ -320,7 +368,7 @@ def create_studio_server(
                 if route == "/api/ascii-safe":
                     sep = str(body.get("separator", ">"))
                     res_a = apply_ascii_safe_mode(separator=sep, config_dir=config_dir)
-                    themes = load_themes()
+                    themes = load_themes(config_dir=config_dir)
                     self._send_json(
                         {
                             "ok": True,
@@ -333,7 +381,7 @@ def create_studio_server(
                 if route == "/api/sync-root":
                     accent = str(body.get("root_accent", "196"))
                     res_r = sync_root_config(root_accent=accent, config_dir=config_dir)
-                    themes = load_themes()
+                    themes = load_themes(config_dir=config_dir)
                     self._send_json(
                         {
                             "ok": True,
@@ -435,7 +483,7 @@ def create_studio_server(
                     return
                 if route == "/api/export-starship":
                     dest_str = str(body.get("output") or "").strip()
-                    dest_p = Path(dest_str) if dest_str else (config_dir or Path.home() / ".config") / "starship.toml"
+                    dest_p = self._resolve_safe_starship_dest(dest_str)
                     res_st = export_starship_toml(dest_p, config_dir=config_dir)
                     self._send_json({"ok": True, "result": res_st})
                     return
@@ -445,7 +493,7 @@ def create_studio_server(
                     if not restored:
                         self._send_json({"ok": False, "error": "Backup not found."}, HTTPStatus.NOT_FOUND)
                         return
-                    themes = load_themes()
+                    themes = load_themes(config_dir=config_dir)
                     self._send_json(
                         {
                             "ok": True,

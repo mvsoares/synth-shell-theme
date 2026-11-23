@@ -797,7 +797,7 @@
         </div>
 
         <div class="panel-box">
-          <h3>Speed, Git &amp; Runtime Patches (v1.1)</h3>
+          <h3>Speed, Git &amp; Runtime Patches</h3>
           <p>Idempotent zero-fork optimizations &amp; WSL2/monorepo Git guards for <code>synth-shell-prompt.sh</code>.</p>
           <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:14px;">
             <label class="toggle-label">
@@ -821,7 +821,7 @@
           </div>
           <div id="patches-list"></div>
           <div style="margin-top:14px;">
-            <button class="primary" id="btn-run-patches">Apply All v1.1 Runtime Patches</button>
+            <button class="primary" id="btn-run-patches">Apply All Runtime Patches</button>
           </div>
         </div>
 
@@ -1554,6 +1554,50 @@
       state.keepInput = e.target.checked;
     });
 
+    function contrastFg(hexBg) {
+      const clean = String(hexBg || "#222222").replace("#", "");
+      if (clean.length !== 6) return "white";
+      const r = parseInt(clean.slice(0, 2), 16);
+      const g = parseInt(clean.slice(2, 4), 16);
+      const b = parseInt(clean.slice(4, 6), 16);
+      return (0.299 * r + 0.587 * g + 0.114 * b) >= 140 ? "black" : "white";
+    }
+
+    function collectLayoutPayload() {
+      return {
+        format: state.formatSegments,
+        right_format: state.rightSegments,
+        right_fill_char: state.rightFillChar,
+        enable_osc133: state.enableOsc133,
+        enable_osc7: state.enableOsc7,
+        enable_terminal_sanitize: state.enableTerminalSanitize,
+        kube_show_namespace: state.kubeShowNamespace,
+        kube_prod_warning: state.kubeProdWarning,
+        git_dynamic_color: state.gitDynamicColor,
+        ssh_host_color: state.sshHostColor,
+        pwd_style: state.pwdStyle,
+        notify_duration_sec: Number(document.getElementById("inp-notify-sec").value || 0),
+        custom_segment_text: document.getElementById("inp-custom-badge").value || "",
+        git_show_state: state.gitShowState,
+        enable_command_on_new_line: state.twoLine,
+        enable_vertical_padding: state.verticalPadding,
+        max_pwd_char: state.maxPwdChar,
+        max_git_char: state.maxGitChar,
+        max_pyenv_char: state.maxPyenvChar,
+        max_kube_char: state.maxKubeChar,
+        compact_width: state.compactWidth,
+        git_show_counts: state.gitShowCounts,
+        transient_prompt: state.transientPrompt,
+        prompt_prefix: state.promptPrefix,
+        font_effect: state.fontEffect,
+        enable_terminal_title: state.enableTerminalTitle,
+        git_skip_untracked_on_slow_fs: state.gitSkipUntracked,
+        git_timeout_ms: Number(document.getElementById("inp-git-timeout").value || 0),
+        git_async_cache: state.gitAsyncCache,
+        min_duration_ms: Number(document.getElementById("inp-min-duration").value || 2000)
+      };
+    }
+
     document.getElementById("btn-apply-active").addEventListener("click", () => {
       applyChanges({
         theme: state.selectedThemeId,
@@ -1561,10 +1605,7 @@
         keep_input: state.keepInput,
         internal_separator: state.internalSep.code,
         end_separator: state.endSep.code,
-        format: state.formatSegments,
-        enable_command_on_new_line: state.twoLine,
-        enable_vertical_padding: state.verticalPadding,
-        max_pwd_char: state.maxPwdChar
+        ...collectLayoutPayload()
       });
     });
 
@@ -1722,6 +1763,16 @@
     });
 
     document.getElementById("btn-toggle-theme").addEventListener("click", async () => {
+      if (state.staticDemo) {
+        const cur = getSelectedTheme();
+        const isLight = cur && (cur.slug.includes("latte") || cur.slug.includes("light"));
+        const target = state.themes.find(t => t.slug === (isLight ? "tokyo-night" : "catppuccin-latte")) || state.themes[0];
+        if (target) { state.selectedThemeId = target.id; state.activeThemeId = target.id; }
+        renderWorkbench();
+        renderThemeGrid();
+        showToast(`Static Demo: previewing ${target ? target.name : "theme"} (CLI: synth-shell-theme --toggle-theme)`);
+        return;
+      }
       const resp = await fetch("/api/toggle-theme", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1740,21 +1791,28 @@
     });
 
     document.getElementById("btn-save-custom-theme").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Static Demo: saving custom themes requires local `synth-shell-theme web`."); return; }
       const name = document.getElementById("ct-name").value.trim() || "My TrueColor Theme";
       const description = document.getElementById("ct-desc").value.trim();
+      const bgHost = document.getElementById("ct-bg-host").value;
+      const bgPwd = document.getElementById("ct-bg-pwd").value;
+      const bgGit = document.getElementById("ct-bg-git").value;
+      const bgPyenv = document.getElementById("ct-bg-pyenv").value;
+      const bgTf = document.getElementById("ct-bg-tf").value;
+      const bgKube = document.getElementById("ct-bg-kube").value;
       const colors = {
-        font_color_host: "white",
-        background_host: document.getElementById("ct-bg-host").value,
-        font_color_pwd: "black",
-        background_pwd: document.getElementById("ct-bg-pwd").value,
-        font_color_git: "black",
-        background_git: document.getElementById("ct-bg-git").value,
-        font_color_pyenv: "black",
-        background_pyenv: document.getElementById("ct-bg-pyenv").value,
-        font_color_tf: "black",
-        background_tf: document.getElementById("ct-bg-tf").value,
-        font_color_kube: "black",
-        background_kube: document.getElementById("ct-bg-kube").value,
+        font_color_host: contrastFg(bgHost),
+        background_host: bgHost,
+        font_color_pwd: contrastFg(bgPwd),
+        background_pwd: bgPwd,
+        font_color_git: contrastFg(bgGit),
+        background_git: bgGit,
+        font_color_pyenv: contrastFg(bgPyenv),
+        background_pyenv: bgPyenv,
+        font_color_tf: contrastFg(bgTf),
+        background_tf: bgTf,
+        font_color_kube: contrastFg(bgKube),
+        background_kube: bgKube,
         font_color_input: document.getElementById("ct-fg-input").value,
         background_input: "none"
       };
@@ -1776,6 +1834,7 @@
     });
 
     document.getElementById("btn-run-bench").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme bench"); return; }
       const out = document.getElementById("bench-result");
       out.textContent = "Benchmarking…";
       const resp = await fetch("/api/bench", {
@@ -1814,41 +1873,11 @@
     });
 
     document.getElementById("btn-save-layout").addEventListener("click", () => {
-      applyChanges({
-        format: state.formatSegments,
-        right_format: state.rightSegments,
-        right_fill_char: state.rightFillChar,
-        enable_osc133: state.enableOsc133,
-        enable_osc7: state.enableOsc7,
-        enable_terminal_sanitize: state.enableTerminalSanitize,
-        kube_show_namespace: state.kubeShowNamespace,
-        kube_prod_warning: state.kubeProdWarning,
-        git_dynamic_color: state.gitDynamicColor,
-        ssh_host_color: state.sshHostColor,
-        pwd_style: state.pwdStyle,
-        notify_duration_sec: Number(document.getElementById("inp-notify-sec").value || 0),
-        custom_segment_text: document.getElementById("inp-custom-badge").value || "",
-        git_show_state: state.gitShowState,
-        enable_command_on_new_line: state.twoLine,
-        enable_vertical_padding: state.verticalPadding,
-        max_pwd_char: state.maxPwdChar,
-        max_git_char: state.maxGitChar,
-        max_pyenv_char: state.maxPyenvChar,
-        max_kube_char: state.maxKubeChar,
-        compact_width: state.compactWidth,
-        git_show_counts: state.gitShowCounts,
-        transient_prompt: state.transientPrompt,
-        prompt_prefix: state.promptPrefix,
-        font_effect: state.fontEffect,
-        enable_terminal_title: state.enableTerminalTitle,
-        git_skip_untracked_on_slow_fs: state.gitSkipUntracked,
-        git_timeout_ms: Number(document.getElementById("inp-git-timeout").value || 0),
-        git_async_cache: state.gitAsyncCache,
-        min_duration_ms: Number(document.getElementById("inp-min-duration").value || 2000)
-      });
+      applyChanges(collectLayoutPayload());
     });
 
     document.getElementById("btn-ascii-safe").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --ascii-safe"); return; }
       const resp = await fetch("/api/ascii-safe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1862,6 +1891,7 @@
     });
 
     document.getElementById("btn-sync-root").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --sync-root"); return; }
       const resp = await fetch("/api/sync-root", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1875,6 +1905,7 @@
     });
 
     document.getElementById("btn-sync-greeter").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --sync-greeter"); return; }
       const resp = await fetch("/api/greeter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1888,6 +1919,7 @@
     });
 
     document.getElementById("btn-greeter-hide-swap").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme --sync-greeter --hide-swap"); return; }
       const resp = await fetch("/api/greeter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1901,6 +1933,7 @@
     });
 
     document.getElementById("btn-run-patches").addEventListener("click", async () => {
+      if (state.staticDemo) { showToast("Run locally: synth-shell-theme init"); return; }
       const resp = await fetch("/api/patches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1910,7 +1943,7 @@
       if (data.ok) {
         syncFromServerState(data.state, data.backups, data.greeter);
         const count = (data.changes || []).length;
-        showToast(count ? `Applied ${count} runtime patch(es)` : "All v1.1 runtime patches already active!");
+        showToast(count ? `Applied ${count} runtime patch(es)` : "All runtime patches already active!");
       }
     });
 

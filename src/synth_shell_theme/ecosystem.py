@@ -190,15 +190,13 @@ def export_starship_toml(
         f'"$schema" = "https://starship.rs/config-schema.json"\n\n'
         f'format = """\n'
         f"$hostname\\\n"
-        f"[ {int_sep}](fg:{host_bg} bg:{pwd_bg})\\\n"
+        f"[{int_sep}](fg:{host_bg} bg:{pwd_bg})\\\n"
         f"$directory\\\n"
-        f"[{int_sep}](fg:{pwd_bg} bg:{git_bg})\\\n"
+        f"[{end_sep}](fg:{pwd_bg})\\\n"
         f"$git_branch$git_status\\\n"
-        f"[{int_sep}](fg:{git_bg} bg:{py_bg})\\\n"
         f"$python\\\n"
-        f"[{int_sep}](fg:{py_bg} bg:{kube_bg})\\\n"
         f"$kubernetes\\\n"
-        f"[{end_sep}](fg:{kube_bg})\\\n"
+        f"$cmd_duration\\\n"
         f"{nl}$character\"\"\"\n\n"
         f"[hostname]\n"
         f"ssh_only = false\n"
@@ -210,21 +208,21 @@ def export_starship_toml(
         f"truncation_length = 3\n\n"
         f"[git_branch]\n"
         f'style = "bg:{git_bg} fg:{git_fg} bold"\n'
-        f'format = "[ $symbol$branch ]($style)"\n\n'
+        f'format = " [ $symbol$branch ]($style)"\n\n'
         f"[git_status]\n"
         f'style = "bg:{git_bg} fg:{git_fg} bold"\n'
-        f'format = "[$all_status$ahead_behind ]($style)"\n\n'
+        f'format = "([$all_status$ahead_behind ]($style))[{end_sep}](fg:{git_bg})"\n\n'
         f"[python]\n"
         f'style = "bg:{py_bg} fg:{py_fg} bold"\n'
-        f'format = "[ $virtualenv ]($style)"\n\n'
+        f'format = " [ $virtualenv ]($style)[{end_sep}](fg:{py_bg})"\n\n'
         f"[kubernetes]\n"
         f"disabled = false\n"
         f'style = "bg:{kube_bg} fg:{kube_fg} bold"\n'
-        f'format = "[ ☸ $context ($namespace) ]($style)"\n\n'
+        f'format = " [ ☸ $context ($namespace) ]($style)[{end_sep}](fg:{kube_bg})"\n\n'
         f"[cmd_duration]\n"
         f"min_time = {int(state.get('min_duration_ms', 2000))}\n"
         f'style = "bg:{dur_bg} fg:{dur_fg} bold"\n'
-        f'format = "[ ⏱ $duration ]($style)"\n\n'
+        f'format = " [ ⏱ $duration ]($style)[{end_sep}](fg:{dur_bg})"\n\n'
         f"[character]\n"
         f'success_symbol = "[❯](bold {input_fg})"\n'
         f'error_symbol = "[✗](bold #f7768e)"\n'
@@ -243,6 +241,7 @@ def ssh_install_remote(
     config_dir: Path | None = None,
 ) -> dict[str, object]:
     """Deploy the patched `synth-shell-prompt.sh` + active config to a remote host over SSH (zero Python/Git needed remotely)."""
+    from synth_shell_theme.core import ASCII_SAFE_GIT_SYMBOLS, _upsert_kv_lines
     from synth_shell_theme.paths import get_config_path, get_prompt_script_path
 
     base = config_dir if config_dir is not None else get_config_dir()
@@ -256,15 +255,15 @@ def ssh_install_remote(
     sh_bytes = prompt_sh.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n").encode("utf-8")
     cfg_text = cfg_path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
 
-    extra_lines: list[str] = []
+    cfg_updates: dict[str, str] = {}
     if ssh_host_color and "ssh_host_color=" not in cfg_text:
-        extra_lines.append('ssh_host_color="true"')
+        cfg_updates["ssh_host_color"] = "true"
     if ascii_safe:
-        cfg_text = re.sub(r'^separator_char=.*$', 'separator_char=">"', cfg_text, flags=re.MULTILINE)
-        cfg_text = re.sub(r'^separator_char_end=.*$', 'separator_char_end=">"', cfg_text, flags=re.MULTILINE)
-        extra_lines.append('git_symbol_dirty=" *"')
-    if extra_lines:
-        cfg_text = cfg_text.rstrip() + "\n" + "\n".join(extra_lines) + "\n"
+        cfg_updates["separator_char"] = ">"
+        cfg_updates["separator_char_end"] = ">"
+        cfg_updates.update(ASCII_SAFE_GIT_SYMBOLS)
+    if cfg_updates:
+        cfg_text = "\n".join(_upsert_kv_lines(cfg_text.splitlines(), cfg_updates)) + "\n"
     cfg_bytes = cfg_text.encode("utf-8")
 
     b64_sh = base64.b64encode(sh_bytes).decode("ascii")
@@ -276,7 +275,7 @@ def ssh_install_remote(
         f"printf '%s' {shlex.quote(b64_sh)} | base64 -d > \"$HOME/.config/synth-shell/synth-shell-prompt.sh\"\n"
         f"printf '%s' {shlex.quote(b64_cfg)} | base64 -d > \"$HOME/.config/synth-shell/synth-shell-prompt.config\"\n"
         'chmod +x "$HOME/.config/synth-shell/synth-shell-prompt.sh"\n'
-        'HOOK=\'if [ -f "$HOME/.config/synth-shell/synth-shell-prompt.sh" ] && [ -n "$( echo $- | grep i )" ]; then source "$HOME/.config/synth-shell/synth-shell-prompt.sh"; fi\'\n'
+        'HOOK=\'if [[ -f "$HOME/.config/synth-shell/synth-shell-prompt.sh" && $- == *i* ]]; then source "$HOME/.config/synth-shell/synth-shell-prompt.sh"; fi\'\n'
         'touch "$HOME/.bashrc"\n'
         'grep -q "synth-shell-prompt.sh" "$HOME/.bashrc" || printf "\\n# synth-shell-theme remote prompt\\n%s\\n" "$HOOK" >> "$HOME/.bashrc"\n'
         'echo "SYNTH_SSH_DEPLOY_OK"\n'

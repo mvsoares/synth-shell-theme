@@ -142,7 +142,7 @@ def print_separator_showcase(
     theme: dict[str, object] | None = None,
     current_glyph: str | None = None,
 ) -> None:
-    """Print categorized showcase of all 46 Powerline & Nerd Font separator presets."""
+    """Print categorized showcase of all 48 Powerline & Nerd Font separator presets."""
     preview_theme = theme if theme is not None else _active_preview_theme()
     if current_glyph is None:
         (current_glyph, _), _ = detect_current_separators()

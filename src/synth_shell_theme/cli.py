@@ -1,4 +1,4 @@
-"""Command-line interface for `synth-shell-theme` and `synth-shell-separator` (v1.1.0)."""
+"""Command-line interface for `synth-shell-theme` and `synth-shell-separator`."""
 
 from __future__ import annotations
 
@@ -543,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
             "  synth-shell-theme                Launch interactive 2-column TUI\n"
             "  synth-shell-theme web            Launch live browser-based Web Studio (port 7778)\n"
             "  synth-shell-theme sep            Launch interactive Dual Separator & 60+ Glyph Editor\n"
-            "  synth-shell-theme init           Apply all v1.2 runtime, speed, TrueColor & hook-chaining patches\n"
+            "  synth-shell-theme init           Apply all runtime, speed, TrueColor, smart safety & hook-chaining patches\n"
             "  synth-shell-theme doctor         Check config, locale, Nerd Fonts, TERM, backups & patch health\n"
             "  synth-shell-theme bench          Measure live prompt_command_hook latency (p50 / p95 ms)\n"
             "  synth-shell-theme completion     Print Bash tab-completion script\n"

@@ -1,4 +1,4 @@
-"""Idempotent runtime patches and optional installer for upstream synth-shell scripts (v1.2.0)."""
+"""Idempotent runtime patches and optional installer for upstream synth-shell scripts."""
 
 from __future__ import annotations
 
@@ -84,10 +84,11 @@ FAST_GET_KUBE = """getKube()
 \tlocal _is_prod=0
 \tif [[ "${SSP_KUBE_PROD_WARNING:-true}" == "true" ]]; then
 \t\tlocal _pat="${SSP_KUBE_PROD_PATTERN:-prod|production|prd|live}"
+\t\tlocal _re="(${_pat})"
 \t\tlocal _had_nocase=0
 \t\tshopt -q nocasematch && _had_nocase=1
 \t\tshopt -s nocasematch
-\t\t[[ "${ctx} ${ns}" =~ ($_pat) ]] && _is_prod=1
+\t\t[[ "${ctx} ${ns}" =~ $_re ]] && _is_prod=1
 \t\t(( _had_nocase == 0 )) && shopt -u nocasematch
 \tfi
 \tif (( _is_prod == 1 )); then
@@ -97,13 +98,21 @@ FAST_GET_KUBE = """getKube()
 \tfi
 }"""
 
-SINGLE_PASS_GIT_V13 = """    # synth-shell-theme: git_single_pass v13 (WSL fast + timeout + async + counts + rebase/merge/worktree + max_git_char)
+SINGLE_PASS_GIT_V13 = """    # synth-shell-theme: git_single_pass v140 (WSL fast + zero-fork config check + safe cache key + counts + rebase/merge/worktree + max_git_char)
     local _git_flags="--porcelain -b"
     if [[ "${SSP_GIT_SKIP_UNTRACKED_ON_SLOW_FS:-true}" == "true" ]]; then
         if [[ "$PWD" == /mnt/[a-z]/* || "$PWD" == /mnt/[a-z] ]]; then
             _git_flags="--porcelain -b -u no"
-        elif [[ "$(git config --bool bash.showUntrackedFiles 2>/dev/null)" == "false" ]]; then
-            _git_flags="--porcelain -b -u no"
+        elif [[ -r .git/config ]]; then
+            local _gc_ln="" _gc_has_ut=0
+            while IFS= read -r _gc_ln; do
+                case "$_gc_ln" in
+                    *showUntrackedFiles*|*showuntrackedfiles*) _gc_has_ut=1; break ;;
+                esac
+            done < .git/config
+            if (( _gc_has_ut == 1 )) && [[ "$(git config --bool bash.showUntrackedFiles 2>/dev/null)" == "false" ]]; then
+                _git_flags="--porcelain -b -u no"
+            fi
         fi
     fi
     local status_out=""
@@ -113,6 +122,16 @@ SINGLE_PASS_GIT_V13 = """    # synth-shell-theme: git_single_pass v13 (WSL fast 
         [[ -d "${XDG_RUNTIME_DIR:-/dev/shm}" && -w "${XDG_RUNTIME_DIR:-/dev/shm}" ]] || _cache_dir="/tmp/synth-shell-git-cache-${UID:-0}"
         mkdir -p "$_cache_dir" 2>/dev/null
         local _cache_key="${PWD//\\//_}"
+        if (( ${#_cache_key} > 180 )); then
+            local _ck_sum=0 _ck_i=0 _ck_len=${#_cache_key} _ck_n=0 _ck_ch=""
+            while (( _ck_i < _ck_len )); do
+                _ck_ch="${_cache_key:_ck_i:1}"
+                printf -v _ck_n '%d' "'$_ck_ch" 2>/dev/null || _ck_n=1
+                _ck_sum=$(( (_ck_sum * 33 + _ck_n) % 2147483647 ))
+                _ck_i=$(( _ck_i + 1 ))
+            done
+            _cache_key="${_cache_key:0:120}_${_ck_sum}"
+        fi
         local _cache_file="${_cache_dir}/${_cache_key}.cache"
         if [[ -r "$_cache_file" ]]; then
             status_out="$(< "$_cache_file")"
@@ -491,6 +510,7 @@ V12_SEGMENTS_BLOCK = """# synth-shell-theme: v11_segments
 # synth-shell-theme: osc133_semantic
 # synth-shell-theme: osc7_cwd
 # synth-shell-theme: v139_smart_features
+# synth-shell-theme: v140_fixes
 # synth-shell-theme: right_prompt
 _ssp_has_element()
 {
@@ -688,6 +708,7 @@ getBattery()
 }
 getSudo()
 {
+\t(( ${EUID:-1000} == 0 )) && return
 \tcommand -v sudo >/dev/null 2>&1 || return
 \tsudo -n true 2>/dev/null && printf '%s' "${SSP_SUDO_SYMBOL:-🔓 sudo}"
 }
@@ -780,6 +801,15 @@ _ssp_host_color_var()
 \t_SSP_SSH_HOST_FG="white"
 \t_SSP_SSH_HOST_BG="${_pal[$_h]}"
 }
+_ssp_vis_width_var()
+{
+\tlocal _s="${1:-}"
+\t_SSP_VW=${#_s}
+\tlocal _em
+\tfor _em in "🚨" "🐳" "🦀" "🐹" "🔋" "🪫" "🔓" "🥋" "⏱" "📦" "⚡"; do
+\t\t[[ "$_s" == *"$_em"* ]] && _SSP_VW=$(( _SSP_VW + 1 ))
+\tdone
+}
 _ssp_format_duration_var()
 {
 \t_SSP_DUR=""
@@ -788,7 +818,7 @@ _ssp_format_duration_var()
 \t(( start_ms <= 0 )) && return
 \tlocal now_ms=0
 \tif [[ -n "${EPOCHREALTIME:-}" ]]; then
-\t\tnow_ms=$(( ${EPOCHREALTIME/./} / 1000 ))
+\t\tnow_ms=$(( ${EPOCHREALTIME/[.,]/} / 1000 ))
 \telse
 \t\tnow_ms=$(( SECONDS * 1000 ))
 \tfi
@@ -1065,7 +1095,8 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \tlocal idx=0 total="${#elements[@]}"
 \twhile (( idx + 1 < total )); do
 \t\t_ssp_text_for_el "${elements[$idx]}"
-\t\tleft_vis=$(( left_vis + ${#_SSP_EL_TXT} + pad_w ))
+\t\t_ssp_vis_width_var "$_SSP_EL_TXT"
+\t\tleft_vis=$(( left_vis + _SSP_VW + pad_w ))
 \t\t_ssp_combine_var "${elements[$idx]}" "${elements[$((idx + 1))]}"
 \t\tPS1+="$_SSP_SEG_OUT"
 \t\tidx=$((idx + 1))
@@ -1078,7 +1109,8 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t\t\tlocal r_nxt="INPUT"
 \t\t\t(( r_idx + 1 < r_tot )) && r_nxt="${r_filtered[$((r_idx + 1))]}"
 \t\t\t_ssp_text_for_el "$r_cur"
-\t\t\tright_vis=$(( right_vis + ${#_SSP_EL_TXT} + pad_w ))
+\t\t\t_ssp_vis_width_var "$_SSP_EL_TXT"
+\t\t\tright_vis=$(( right_vis + _SSP_VW + pad_w ))
 \t\t\t_ssp_combine_var "$r_cur" "$r_nxt"
 \t\t\tright_str+="$_SSP_SEG_OUT"
 \t\t\tr_idx=$((r_idx + 1))
@@ -1093,7 +1125,9 @@ V12_PROMPT_COMMAND_HOOK = """prompt_command_hook()
 \t\tfi
 \tfi
 
-\t_ssp_colors_var "${elements[$idx]}"
+\tlocal _last_el="INPUT"
+\t(( total > 0 )) && _last_el="${elements[$idx]}"
+\t_ssp_colors_var "$_last_el"
 \tlocal input_color="${_SSP_EL_C[0]:-white}"
 \tlocal input_bg="${_SSP_EL_C[1]:-none}"
 \tlocal input_effect="${_SSP_EL_C[2]:-bold}"
@@ -1108,6 +1142,7 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \t# synth-shell-theme: v12_init
 \t# synth-shell-theme: v13_init
 \t# synth-shell-theme: v139_init
+\t# synth-shell-theme: v140_init
 \t# synth-shell-theme: hook_chaining
 \tSSP_RIGHT_ELEMENTS=(${right_format:-})
 \tSSP_RIGHT_FILL_CHAR="${right_fill_char:-─}"
@@ -1172,7 +1207,7 @@ V12_INIT_AND_CHAINING = """\t# synth-shell-theme: v11_init
 \tlocal _ps0_osc=""
 \t[[ "${SSP_ENABLE_OSC133}" == "true" ]] && _ps0_osc=$'\\e]133;C\\a'
 \tif [[ -n "${EPOCHREALTIME:-}" ]]; then
-\t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=${EPOCHREALTIME/./}/1000, 0))}'
+\t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=${EPOCHREALTIME/[.,]/}/1000, 0))}'
 \telse
 \t\tPS0="${_ps0_osc}"$'\\e[0m''${_SSP_EMPTY:0:((_SSP_CMD_START_MS=SECONDS*1000, 0))}'
 \tfi
@@ -1293,6 +1328,11 @@ _V11_INIT_AND_PC_RE = re.compile(
 _V12_GIT_RE = re.compile(
     r"^[ \t]*# synth-shell-theme: git_single_pass v12[^\n]*\n.*?"
     r"[ \t]*\[\[ -n \"\$_ab_counts\" \]\] && branch=\"\$\{branch\}\$\{_ab_counts\}\"\n[ \t]*fi",
+    re.MULTILINE | re.DOTALL,
+)
+_V13_GIT_RE = re.compile(
+    r"^[ \t]*# synth-shell-theme: git_single_pass v13[^\n]*\n.*?"
+    r"[ \t]*\[\[ -n \"\$_gstate\" \]\] && branch=\"\$\{branch\} \| \$\{_gstate\}\"\n[ \t]*fi\n[ \t]*fi",
     re.MULTILINE | re.DOTALL,
 )
 _DEBUG_TRAP_RE = re.compile(
@@ -1425,19 +1465,27 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
         or '[[ -n "$(git status --porcelain)" ]]' not in content
     )
     git_wsl_fast = (
-        "synth-shell-theme: git_single_pass v13" in content
+        "synth-shell-theme: git_single_pass v140" in content
+        or "synth-shell-theme: git_single_pass v13" in content
         or "synth-shell-theme: git_single_pass v12" in content
         or "synth-shell-theme: git_single_pass v11" in content
         or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content))
     )
     git_ahead_behind_counts = (
-        "synth-shell-theme: git_single_pass v13" in content
+        "synth-shell-theme: git_single_pass v140" in content
+        or "synth-shell-theme: git_single_pass v13" in content
         or "synth-shell-theme: git_single_pass v12" in content
         or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content) or _V11_GIT_RE.search(content))
     )
     git_advanced_state = (
-        "synth-shell-theme: git_single_pass v13" in content
-        or not (_OLD_GIT_RE.search(content) or _V10_GIT_RE.search(content) or _V11_GIT_RE.search(content) or _V12_GIT_RE.search(content))
+        "synth-shell-theme: git_single_pass v140" in content
+        or not (
+            _OLD_GIT_RE.search(content)
+            or _V10_GIT_RE.search(content)
+            or _V11_GIT_RE.search(content)
+            or _V12_GIT_RE.search(content)
+            or _V13_GIT_RE.search(content)
+        )
     )
     dual_separator = (
         'local sep_char="${6:-${separator_char:-}}"' in content
@@ -1470,7 +1518,12 @@ def inspect_patches(config_dir: Path | None = None) -> dict[str, bool]:
     )
     osc7_cwd = ("synth-shell-theme: osc7_cwd" in content) if has_full_hook else True
     v139_smart_features = (
-        ("synth-shell-theme: v139_smart_features" in content and "synth-shell-theme: v139_init" in content)
+        (
+            "synth-shell-theme: v139_smart_features" in content
+            and "synth-shell-theme: v139_init" in content
+            and "synth-shell-theme: v140_fixes" in content
+            and "synth-shell-theme: v140_init" in content
+        )
         if has_full_hook
         else True
     )
@@ -1609,6 +1662,9 @@ def apply_runtime_patches(
         elif _V12_GIT_RE.search(updated):
             updated = _V12_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
             changes.append("git_advanced_state")
+        elif _V13_GIT_RE.search(updated):
+            updated = _V13_GIT_RE.sub(lambda _: SINGLE_PASS_GIT_V13, updated, count=1)
+            changes.append("git_advanced_state")
 
         # 3. Zero-fork segment renderer + UTF-8 PS1 escape guard + TrueColor 24-bit (#RRGGBB)
         if "synth-shell-theme: truecolor_24bit" not in updated or "${loc,,}" in updated:
@@ -1669,6 +1725,8 @@ def apply_runtime_patches(
             or "synth-shell-theme: v13_init" not in updated
             or "synth-shell-theme: v139_smart_features" not in updated
             or "synth-shell-theme: v139_init" not in updated
+            or "synth-shell-theme: v140_fixes" not in updated
+            or "synth-shell-theme: v140_init" not in updated
             or "synth-shell-theme: osc133_semantic" not in updated
             or "synth-shell-theme: osc7_cwd" not in updated
             or "synth-shell-theme: terminal_sanitize" not in updated
@@ -1703,7 +1761,7 @@ def apply_runtime_patches(
             # Remove destructive DEBUG trap (replaced by PS0 reset)
             updated = _DEBUG_TRAP_RE.sub("", updated, count=1)
 
-            if "synth-shell-theme: v139_init" not in updated or "133;C\\e\\\\" in updated or "SSP_TERMINAL_SANITIZE" not in updated:
+            if "synth-shell-theme: v140_init" not in updated or "133;C\\e\\\\" in updated or "SSP_TERMINAL_SANITIZE" not in updated:
                 if _V11_INIT_AND_PC_RE.search(updated):
                     updated = _V11_INIT_AND_PC_RE.sub(lambda _: V12_INIT_AND_CHAINING, updated, count=1)
                 elif "\tPROMPT_COMMAND=prompt_command_hook" in updated:

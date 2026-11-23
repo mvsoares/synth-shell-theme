@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -173,17 +174,36 @@ def _strip_inline_comment(val: str) -> str:
 
 
 def _unquote(val: str) -> str:
-    """Remove surrounding Bash quotes (`\"...\"`, `'...'`, or `$'...'`)."""
+    """Remove surrounding Bash quotes (`\"...\"`, `'...'`, or `$'...'`) and unescape double-quoted specials."""
     s = _strip_inline_comment(val)
     if s.startswith("$'") and s.endswith("'"):
         return s[2:-1]
-    if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
         return s[1:-1]
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        inner = s[1:-1]
+        out: list[str] = []
+        i = 0
+        while i < len(inner):
+            if inner[i] == "\\" and i + 1 < len(inner) and inner[i + 1] in ('\\', '"', "$", "`"):
+                out.append(inner[i + 1])
+                i += 2
+            else:
+                out.append(inner[i])
+                i += 1
+        return "".join(out)
     return s
 
 
 def _escape_bash_dq(val: str) -> str:
-    return val.replace("\\", "\\\\").replace('"', '\\"')
+    """Safely escape a string for a Bash double-quoted config assignment (`key=\"...\"`)."""
+    clean = str(val).replace("\r", " ").replace("\n", " ")
+    return (
+        clean.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "\\$")
+        .replace("`", "\\`")
+    )
 
 
 def _upsert_kv_lines(lines: list[str], updates: dict[str, str]) -> list[str]:
@@ -344,7 +364,7 @@ def detect_current_theme(
 
     for raw_line in lines:
         line = raw_line.strip()
-        m_hdr = re.match(r"^#\s*Theme\s+\d+:\s*(.+)$", line)
+        m_hdr = re.match(r"^#\s*Theme(?:\s+\d+)?:\s*(.+)$", line)
         if m_hdr and header_title is None:
             header_title = m_hdr.group(1).strip()
             continue
@@ -625,7 +645,7 @@ def apply_theme(
     bak = backup_config(base) if (create_backup and cfg.is_file()) else None
 
     theme_id = int(theme.get("id", 0) or 0)
-    theme_title = str(theme.get("name") or theme.get("_name") or "Custom")
+    theme_title = " ".join(str(theme.get("name") or theme.get("_name") or "Custom").replace("\r", " ").replace("\n", " ").split())
     header_comment = (
         f"# Theme {theme_id}: {theme_title}" if theme_id else f"# Theme: {theme_title}"
     )
@@ -699,10 +719,11 @@ def apply_theme(
             val = str(theme[key])
             if force_white and key.startswith("font_color_") and key != "font_color_input":
                 val = "white"
+            safe_val = _escape_bash_dq(val)
             if "'" in line and '"' not in line:
-                new_lines.append(f"{key}='{val}'")
+                new_lines.append(f"{key}='{val.replace(chr(39), '')}'")
             else:
-                new_lines.append(f'{key}="{val}"')
+                new_lines.append(f'{key}="{safe_val}"')
             updated.add(key)
         else:
             new_lines.append(line)
@@ -722,7 +743,7 @@ def apply_theme(
             val = str(theme[key])
             if force_white and key.startswith("font_color_") and key != "font_color_input":
                 val = "white"
-            new_lines.append(f'{key}="{val}"')
+            new_lines.append(f'{key}="{_escape_bash_dq(val)}"')
 
     _atomic_write(cfg, "\n".join(new_lines) + "\n")
     return {
@@ -746,7 +767,7 @@ def apply_separators(
     ensure_dual_separator_support(base)
 
     if not cfg.is_file():
-        themes = load_themes()
+        themes = load_themes(config_dir=base)
         apply_theme(themes[1] if len(themes) > 1 else themes[0], create_backup=False, config_dir=base)
 
     bak = backup_config(base) if create_backup else None
@@ -930,6 +951,21 @@ def apply_layout_options(
 
     return {
         "format": clean_format,
+        "right_format": clean_right_format,
+        "right_fill_char": right_fill_char,
+        "enable_osc133": enable_osc133,
+        "enable_osc7": enable_osc7,
+        "enable_terminal_sanitize": enable_terminal_sanitize,
+        "kube_show_namespace": kube_show_namespace,
+        "kube_prod_warning": kube_prod_warning,
+        "kube_prod_pattern": kube_prod_pattern,
+        "git_dynamic_color": git_dynamic_color,
+        "ssh_host_color": ssh_host_color,
+        "pwd_style": pwd_style,
+        "notify_duration_sec": notify_duration_sec,
+        "custom_segment_text": custom_segment_text,
+        "git_show_state": git_show_state,
+        "battery_threshold": battery_threshold,
         "enable_command_on_new_line": new_line,
         "enable_vertical_padding": vertical_padding,
         "max_pwd_char": max_pwd_char,
@@ -963,7 +999,7 @@ def apply_ascii_safe_mode(
     cfg = get_config_path(base)
 
     if not cfg.is_file():
-        themes = load_themes()
+        themes = load_themes(config_dir=base)
         apply_theme(themes[1] if len(themes) > 1 else themes[0], create_backup=False, config_dir=base)
 
     bak = backup_config(base) if create_backup else None
@@ -993,7 +1029,7 @@ def sync_root_config(
     """Generate/sync `synth-shell-prompt.root.config` matching active theme with a root warning accent."""
     base = config_dir if config_dir is not None else get_config_dir()
     root_cfg = get_root_config_path(base)
-    catalog = load_themes()
+    catalog = load_themes(config_dir=base)
     state = read_current_state(catalog, base)
 
     if theme is None:
@@ -1022,7 +1058,7 @@ def sync_root_config(
         "",
         "# High-visibility root warning accent on USER & HOST",
         'font_color_user="white"',
-        f'background_user="{root_accent}"',
+        f'background_user="{_escape_bash_dq(root_accent)}"',
         'texteffect_user="bold"',
         'font_color_host="white"',
         'background_host="52"',
@@ -1030,16 +1066,18 @@ def sync_root_config(
         "",
         "# Remaining segments synced from active theme",
     ]
-    for seg in ("pwd", "git", "pyenv", "tf", "kube", "clock", "status", "duration", "aws", "gcp", "docker", "node", "ssh"):
+    for seg in SEGMENT_KEYS:
+        if seg in ("user", "host", "input"):
+            continue
         def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
         fg = str(theme.get(f"font_color_{seg}", def_fg))
         bg = str(theme.get(f"background_{seg}", def_bg))
-        lines.append(f'font_color_{seg}="{fg}"')
-        lines.append(f'background_{seg}="{bg}"')
+        lines.append(f'font_color_{seg}="{_escape_bash_dq(fg)}"')
+        lines.append(f'background_{seg}="{_escape_bash_dq(bg)}"')
 
     lines.extend(
         [
-            f'font_color_input="{root_accent}"',
+            f'font_color_input="{_escape_bash_dq(root_accent)}"',
             'background_input="none"',
             'texteffect_input="bold"',
         ]
@@ -1102,7 +1140,7 @@ def sync_greeter_theme(
     """Sync active prompt theme colors and/or monitor visibility into `synth-shell-greeter.config`."""
     base = config_dir if config_dir is not None else get_config_dir()
     gcfg = get_greeter_config_path(base)
-    catalog = load_themes()
+    catalog = load_themes(config_dir=base)
     state = read_current_state(catalog, base)
 
     if theme is None:
@@ -1198,6 +1236,11 @@ def export_preset(dest_path: Path, config_dir: Path | None = None) -> Path:
         "max_git_char": state["max_git_char"],
         "max_pyenv_char": state["max_pyenv_char"],
         "max_kube_char": state["max_kube_char"],
+        "compact_width": state["compact_width"],
+        "git_show_counts": state["git_show_counts"],
+        "transient_prompt": state["transient_prompt"],
+        "light_theme": state["light_theme"],
+        "dark_theme": state["dark_theme"],
         "prompt_prefix": state["prompt_prefix"],
         "font_effect": state["font_effect"],
         "enable_terminal_title": state["enable_terminal_title"],
@@ -1233,7 +1276,7 @@ def import_preset(src_path: Path, config_dir: Path | None = None) -> dict[str, o
                 pseudo_theme[str(k)] = str(v)
         apply_theme(pseudo_theme, create_backup=False, config_dir=base)
     elif data.get("active_theme"):
-        themes = load_themes()
+        themes = load_themes(config_dir=base)
         found, _ = find_theme(str(data["active_theme"]), themes)
         if found:
             apply_theme(found, create_backup=False, config_dir=base)
@@ -1424,7 +1467,7 @@ def benchmark_prompt(
         bench_sh = Path(tmp) / "bench_prompt.sh"
         bench_sh.write_text(stripped + "\n", encoding="utf-8", newline="\n")
         driver = (
-            f'source "{bench_sh}" >/dev/null 2>&1; '
+            f"source {shlex.quote(str(bench_sh))} >/dev/null 2>&1; "
             'declare -F prompt_command_hook >/dev/null 2>&1 || exit 2; '
             "prompt_command_hook; "  # warm-up
             f"for ((i=0; i<{runs}; i++)); do "
@@ -1432,11 +1475,12 @@ def benchmark_prompt(
             "prompt_command_hook; "
             't1="${EPOCHREALTIME:-}"; '
             'if [[ -n "$t0" && -n "$t1" ]]; then '
-            'echo "$(( (${t1/./} - ${t0/./}) ))"; '
+            'echo "$(( (${t1/[.,]/} - ${t0/[.,]/}) ))"; '
             "else echo 0; fi; "
             "done"
         )
         bench_env = dict(os.environ)
+        bench_env["LC_NUMERIC"] = "C"
         if not bench_env.get("TERM") or bench_env.get("TERM") == "dumb":
             bench_env["TERM"] = "xterm-256color"
         t_wall0 = time.perf_counter()

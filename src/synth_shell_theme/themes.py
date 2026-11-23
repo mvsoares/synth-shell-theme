@@ -318,6 +318,23 @@ def load_themes(
     return themes
 
 
+def is_valid_color_token(token: str) -> bool:
+    """Return True if `token` is a safe, valid synth-shell color value (0-255, named color, #hex, or none)."""
+    clean = token.strip().lower()
+    if clean in ("none", "transparent", "default"):
+        return True
+    if normalize_hex_color(clean) is not None:
+        return True
+    if clean in NAMED_COLORS:
+        return True
+    return clean.isdigit() and 0 <= int(clean) <= 255
+
+
+def _sanitize_header_text(text: str) -> str:
+    """Strip CR/LF control characters so comment headers cannot inject config lines."""
+    return " ".join(text.replace("\r", " ").replace("\n", " ").split())
+
+
 def save_custom_theme(
     name: str,
     colors: dict[str, str],
@@ -326,7 +343,7 @@ def save_custom_theme(
     config_dir: Path | None = None,
 ) -> dict[str, object]:
     """Save a custom theme (supporting 256-color and #RRGGBB TrueColor) into `~/.config/synth-shell/themes/`."""
-    clean_name = name.strip()
+    clean_name = _sanitize_header_text(name)
     if not clean_name:
         raise ValueError("Theme name cannot be empty.")
     slug = re.sub(r"[^a-z0-9]+", "-", clean_name.lower()).strip("-") or "custom-theme"
@@ -334,15 +351,21 @@ def save_custom_theme(
     user_dir.mkdir(parents=True, exist_ok=True)
     dest = user_dir / f"{slug}.conf"
 
-    h_idx = color_index(colors.get("background_host", "237")) or 237
-    p_idx = color_index(colors.get("background_pwd", "255")) or 255
-    g_idx = color_index(colors.get("background_git", "71")) or 71
+    h_idx = color_index(colors.get("background_host", "237"))
+    p_idx = color_index(colors.get("background_pwd", "255"))
+    g_idx = color_index(colors.get("background_git", "71"))
+    h_idx = 237 if h_idx is None else h_idx
+    p_idx = 255 if p_idx is None else p_idx
+    g_idx = 71 if g_idx is None else g_idx
+
+    clean_badge = _sanitize_header_text(badge) or "Custom"
+    clean_desc = _sanitize_header_text(description) or "Custom user theme created in Synth-Shell Theme Studio."
 
     lines = [
         f"# Theme 0: {clean_name}",
         f"# swatch256: {h_idx} {p_idx} {g_idx}",
-        f"# badge: {badge.strip() or 'Custom'}",
-        f"# description: {description.strip() or 'Custom user theme created in Synth-Shell Theme Studio.'}",
+        f"# badge: {clean_badge}",
+        f"# description: {clean_desc}",
         'format="HOST PWD GIT PYENV TF KUBE"',
         'separator_char="\\uE0B4"',
         'separator_char_end="\\uE0B0"',
@@ -354,8 +377,10 @@ def save_custom_theme(
         def_fg, def_bg = DEFAULT_SEGMENT_COLORS[seg]
         fg_k = f"font_color_{seg}"
         bg_k = f"background_{seg}"
-        fg_val = str(colors.get(fg_k, def_fg)).strip() or def_fg
-        bg_val = str(colors.get(bg_k, def_bg)).strip() or def_bg
+        raw_fg = str(colors.get(fg_k, def_fg)).strip()
+        raw_bg = str(colors.get(bg_k, def_bg)).strip()
+        fg_val = raw_fg if (raw_fg and is_valid_color_token(raw_fg)) else def_fg
+        bg_val = raw_bg if (raw_bg and is_valid_color_token(raw_bg)) else def_bg
         if fg_k in colors or seg in ("host", "pwd", "git", "pyenv", "tf", "kube", "input"):
             lines.append(f'{fg_k}="{fg_val}"')
         if bg_k in colors or seg in ("host", "pwd", "git", "pyenv", "tf", "kube", "input"):
@@ -391,7 +416,8 @@ def find_theme(
     # 2. Exact slug / stem match
     for i, t in enumerate(themes, 1):
         slug = str(t.get("slug", "")).lower().replace("-", " ").replace("_", " ")
-        stem = Path(t["_path"]).stem.lower().replace("-", " ").replace("_", " ")  # type: ignore[arg-type]
+        raw_path = t.get("_path")
+        stem = Path(raw_path).stem.lower().replace("-", " ").replace("_", " ") if raw_path else slug  # type: ignore[arg-type]
         if q in (slug, stem):
             return t, i
 

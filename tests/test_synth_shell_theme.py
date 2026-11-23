@@ -1174,7 +1174,7 @@ fi
                     'JJ_OUT="$(getJj)"; [[ "$JJ_OUT" == *"🥋"* ]] && echo "JJ_OK"; '
                     'SYNTH_CUSTOM_BADGE="VPN:BR" getCustom; echo ""; '
                     'SSP_NOTIFY_DURATION_SEC=5 SSP_FORCE_NOTIFY=1; '
-                    'if [[ -n "${EPOCHREALTIME:-}" ]]; then _SSP_CMD_START_MS=$(( ${EPOCHREALTIME/./} / 1000 - 7500 )); else SECONDS=20; _SSP_CMD_START_MS=12500; fi; '
+                    'if [[ -n "${EPOCHREALTIME:-}" ]]; then _SSP_CMD_START_MS=$(( ${EPOCHREALTIME/[.,]/} / 1000 - 7500 )); else SECONDS=20; _SSP_CMD_START_MS=12500; fi; '
                     'NOTIF_OUT="$(prompt_command_hook)"; [[ "$NOTIF_OUT" == *"]9;synth-shell:"* || "$NOTIF_OUT" == *"]99;"* ]] && echo "NOTIFY_OK"'
                 )
                 r_bash = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, check=False)
@@ -1219,6 +1219,156 @@ fi
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+    def test_v140_security_locale_custom_themes_and_fixes(self) -> None:
+        import urllib.error
+
+        # 1. Shell-injection escaping in _escape_bash_dq / _unquote & save_custom_theme
+        core.apply_layout_options(
+            prompt_prefix="$ $(touch /tmp/should-not-run) `id`\nnewline",
+            custom_segment_text='100$ "quoted"',
+            config_dir=self.cfg_dir,
+        )
+        cfg_txt = (self.cfg_dir / "synth-shell-prompt.config").read_text(encoding="utf-8")
+        self.assertIn(r'prompt_prefix="\$ \$(touch /tmp/should-not-run) \`id\` newline"', cfg_txt)
+        self.assertIn(r'custom_segment_text="100\$ \"quoted\""', cfg_txt)
+        st_esc = core.read_current_state(config_dir=self.cfg_dir)
+        self.assertEqual(st_esc["prompt_prefix"], "$ $(touch /tmp/should-not-run) `id` newline")
+        self.assertEqual(st_esc["custom_segment_text"], '100$ "quoted"')
+
+        # save_custom_theme rejects unsafe color tokens & strips newlines in headers
+        saved_custom = themes.save_custom_theme(
+            name="Safe Custom\nInjected",
+            colors={
+                "background_host": "#112233",
+                "font_color_host": "$(whoami)",
+                "background_pwd": "#eeeeee",
+                "font_color_pwd": "black",
+            },
+            config_dir=self.cfg_dir,
+        )
+        custom_txt = Path(saved_custom["_path"]).read_text(encoding="utf-8")  # type: ignore[arg-type]
+        self.assertNotIn("$(whoami)", custom_txt)
+        self.assertIn("# Theme 0: Safe Custom Injected", custom_txt)
+
+        # Custom theme applied via handle_apply_payload(config_dir=...) & detected by header
+        res_apply = server.handle_apply_payload({"theme": "safe-custom-injected"}, config_dir=self.cfg_dir)
+        self.assertTrue(res_apply["ok"])
+        self.assertEqual(res_apply["state"]["active_theme"], "Safe Custom Injected")
+
+        # 2. export_preset includes v1.2+ fields (compact_width, git_show_counts, transient_prompt, light/dark)
+        core.apply_layout_options(
+            compact_width=77,
+            git_show_counts=False,
+            transient_prompt=True,
+            light_theme="catppuccin-latte",
+            dark_theme="dracula-punch",
+            config_dir=self.cfg_dir,
+        )
+        preset_p = self.cfg_dir / "v140-preset.json"
+        core.export_preset(preset_p, config_dir=self.cfg_dir)
+        exported = json.loads(preset_p.read_text(encoding="utf-8"))
+        self.assertEqual(exported["compact_width"], 77)
+        self.assertFalse(exported["git_show_counts"])
+        self.assertTrue(exported["transient_prompt"])
+        self.assertEqual(exported["dark_theme"], "dracula-punch")
+
+        # 3. sync_root_config covers all 24 segments
+        root_res = core.sync_root_config(config_dir=self.cfg_dir)
+        root_txt = Path(root_res["root_config_path"]).read_text(encoding="utf-8")  # type: ignore[arg-type]
+        for seg in ("jobs", "direnv", "shlvl", "rust", "go", "battery", "sudo", "jj", "custom"):
+            self.assertIn(f"background_{seg}=", root_txt)
+
+        # 4. export_starship_toml has no stray space before internal separator
+        st_out = self.cfg_dir / "clean-starship.toml"
+        ecosystem.export_starship_toml(st_out, config_dir=self.cfg_dir)
+        st_txt = st_out.read_text(encoding="utf-8")
+        self.assertNotIn("[ \ue0b4]", st_txt)
+        self.assertIn("[\ue0b4](fg:", st_txt)
+
+        # 5. ssh_install_remote --ascii-safe replaces all ASCII_SAFE_GIT_SYMBOLS & uses pure-Bash hook
+        prompt_sh = self.cfg_dir / "synth-shell-prompt.sh"
+        prompt_sh.write_text(MOCK_UPSTREAM_PROMPT_SH, encoding="utf-8", newline="\n")
+        patches.apply_runtime_patches(self.cfg_dir)
+        dry_ssh = ecosystem.ssh_install_remote("dev@example.com", ascii_safe=True, dry_run=True, config_dir=self.cfg_dir)
+        self.assertTrue(dry_ssh["ok"])
+
+        # 6. Web Studio CSRF / Origin / Content-Type / path-traversal guards
+        httpd = server.create_studio_server("127.0.0.1", 0, config_dir=self.cfg_dir)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            # Reject text/plain CSRF POST
+            req_plain = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/apply",
+                data=b'{"theme": 1}',
+                headers={"Content-Type": "text/plain"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as ctx_plain:
+                urllib.request.urlopen(req_plain)
+            self.assertEqual(ctx_plain.exception.code, 403)
+
+            # Reject evil Origin header
+            req_origin = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/apply",
+                data=b'{"theme": 1}',
+                headers={"Content-Type": "application/json", "Origin": "https://evil.example.com"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as ctx_origin:
+                urllib.request.urlopen(req_origin)
+            self.assertEqual(ctx_origin.exception.code, 403)
+
+            # Reject arbitrary file write outside config_dir in /api/export-starship
+            req_trav = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/export-starship",
+                data=json.dumps({"output": str(Path.home() / ".bashrc")}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as ctx_trav:
+                urllib.request.urlopen(req_trav)
+            self.assertEqual(ctx_trav.exception.code, 400)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+        # 7. Bash runtime verification: decimal-comma EPOCHREALTIME + emoji width helper
+        if shutil.which("bash"):
+            probe = subprocess.run(["bash", "-c", "true"], capture_output=True, text=True, check=False)
+            if probe.returncode == 0:
+                full_sh = self.cfg_dir / "full_v140.sh"
+                full_sh.write_text(
+                    MOCK_UPSTREAM_PROMPT_SH
+                    + "\ngetPyenv()\n{\n\techo ''\n}\n"
+                    + "get_colors_for_element()\n{\n\techo 'white blue bold'\n}\n"
+                    + "prompt_command_hook()\n{\n\tPS1='x'\n}\n"
+                    + "synth_shell_prompt()\n{\n\tPROMPT_COMMAND=prompt_command_hook\n}\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                # Copy into synth-shell-prompt.sh and patch
+                prompt_sh.write_text(full_sh.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+                res_p = patches.apply_runtime_patches(self.cfg_dir)
+                self.assertTrue(res_p["status"]["all_applied"])
+                # Verify idempotency
+                res_p2 = patches.apply_runtime_patches(self.cfg_dir)
+                self.assertEqual(res_p2["changes"], [])
+
+                runner_cmd = (
+                    f'eval "$(sed \'/interactive_guard/d\' "{prompt_sh}")"; '
+                    '_SSP_VIS_A=""; _ssp_vis_width_var "abc"; echo "VW_ASCII=$_SSP_VW"; '
+                    '_ssp_vis_width_var "🚨 prod"; echo "VW_EMOJI=$_SSP_VW"; '
+                    'EPOCHREALTIME="1795467919,500000" _SSP_CMD_START_MS=1795467915000 SSP_MIN_DURATION_MS=1000 _ssp_format_duration_var; '
+                    'echo "DUR_COMMA=$_SSP_DUR"'
+                )
+                r_b = subprocess.run(["bash", "-c", runner_cmd], capture_output=True, text=True, check=False)
+                self.assertEqual(r_b.returncode, 0, msg=r_b.stderr)
+                self.assertIn("VW_ASCII=3", r_b.stdout)
+                self.assertIn("VW_EMOJI=7", r_b.stdout)
+                self.assertIn("DUR_COMMA=⏱ 4.5s", r_b.stdout)
 
 
 if __name__ == "__main__":
