@@ -22,19 +22,19 @@ Built with **100% Python `>= 3.10` standard library** — **zero external runtim
 - **64 Curated 256-Color Prompt Themes**: From *Tokyo Night*, *Catppuccin Mocha/Latte/Frappé/Mauve*, *Dracula Punch*, *Rose Pine*, *Kanagawa*, *Everforest*, *Gruvbox*, and *Cyberpunk Edgerunners* to *Cloud Ops*, *GitHub Dark*, and *Minimal Mono*.
 - **Side-by-Side Terminal UI (`synth-shell-theme`)**: 2-column 256-color live terminal preview rendering both 3-segment and 6-segment DevOps prompts (`host · pwd · git · pyenv · tf · kube`), live search (`/term`), high-contrast white-text mode (`[f]`), and 1-key undo (`[u]`).
 - **Dual Powerline Separator Editor (`synth-shell-separator` or `synth-shell-theme sep`)**: Mix independent **internal** (`separator_char`) and **ending** (`separator_char_end`) glyphs across **48 curated presets** in 6 categories plus a **60+ Nerd Font Character Matrix**.
-- **Live Browser Web Studio (`synth-shell-theme web`)**: Local HTTP studio (`http://127.0.0.1:7778`) — also tryable as a static browser showcase (`synth-shell-theme export-web docs/index.html`) — with a sticky live workbench (Left + Right `RPROMPT` bars), drag-and-drop segment reordering across 21 segments, click-to-edit inline segment colors, 1-click **Copy CLI** sharing, custom TrueColor theme creator, and backup history.
-- **Unified Color Ecosystem, Starship Export, SSH Deploy & External Theme Importer**: Sync your active palette to `fzf` (`FZF_DEFAULT_OPTS`), `LS_COLORS`, `tmux`, and **WezTerm** (`wezterm-theme.lua`) via `--sync-ecosystem`, export any of the 64 themes + dual separators to **`starship.toml`** (`export-starship`), deploy your patched prompt to remote Linux servers in 1 command without Python/Git (`ssh-install user@host`), or import palettes from **Pywal**, **Base16 YAML**, **Ghostty**, **Kitty**, **Alacritty**, and **Windows Terminal** (`import-theme`).
+- **Live Browser Web Studio (`synth-shell-theme web`)**: Local HTTP studio (`http://127.0.0.1:7778`) — also tryable as a static browser showcase (`synth-shell-theme export-web docs/index.html`) — with a sticky live workbench (Left + Right `RPROMPT` bars), drag-and-drop segment reordering across **24 segments**, click-to-edit inline segment colors, 1-click **Copy CLI** sharing, an auto-contrast custom TrueColor theme creator, backup history, and built-in localhost CSRF / same-origin protection.
+- **Unified Color Ecosystem, Starship Export, SSH Deploy & External Theme Importer**: Sync your active palette to `fzf` (`FZF_DEFAULT_OPTS`), `LS_COLORS`, `tmux`, and **WezTerm** (`wezterm-theme.lua`) via `--sync-ecosystem`, export any of the 64 themes + dual separators to **`starship.toml`** (`export-starship`), deploy your patched prompt to remote Linux servers in 1 command without Python/Git (`ssh-install user@host`, with full `--ascii-safe` symbol support and a zero-fork `.bashrc` hook), or import palettes from **Pywal**, **Base16 YAML**, **Ghostty**, **Kitty**, **Alacritty**, and **Windows Terminal** (`import-theme`).
 - **Idempotent Runtime, Speed & Modern Terminal Patches (`synth-shell-theme init`)**:
   1. **Zero-fork segment renderer (`zero_fork_render`)**: Eliminates ~15–25 subshell forks per `Enter` via pure-Bash color/format variable lookups.
-  2. **Zero-subshell Kubernetes context, namespace & 🚨 prod warning (`kube_fast` / `kube_namespace_prod`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, removes `yq` dependency, shortens GKE context names, appends active `(namespace)`, and highlights production clusters in red with `🚨`).
-  3. **Single-pass Git + WSL2/Monorepo + Advanced State + Dynamic Colors (`git_single_pass` / `git_wsl_fast` / `git_advanced_state`)**: Consolidates 3 `git status` calls into one, shows exact `↑N ↓M` counts plus `REBASE`, `MERGE`, `CHERRY`, `BISECT`, and `worktree` (`⎇`) state in pure Bash, optionally colors `GIT` dynamically (amber dirty / red rebase), auto-skips untracked scans on WSL2 `/mnt/*`, supports `--git-timeout`, optional `--async-git` background cache (`/dev/shm`), and `--max-git` branch truncation.
-  4. **24 Zero-Fork Telemetry, Dev, VCS & Custom Segments**: `USER`, `HOST` (with optional SSH hostname color hashing), `PWD` (with `--pwd-style fish`), `GIT`, `JJ` (Jujutsu VCS), `PYENV`, `TF`, `KUBE`, `CLOCK`, `STATUS`, `DURATION`, `AWS`, `GCP`, `DOCKER`, `NODE`, `SSH`, `JOBS`, `DIRENV`, `SHLVL`/`NIX`, `RUST`, `GO`, `BATTERY`, `SUDO`, and `CUSTOM`.
-  5. **Right-Aligned Top Prompt (`right_prompt`), OSC 133, OSC 7 CWD & OSC 9/99 Notifications**: Pure-Bash `RPROMPT` top bar (`--right-format`, `--right-fill`), native `OSC 133;A/B/C/D;<exit>` prompt navigation, `OSC 7` directory inheritance for new tabs/splits in WezTerm/Ghostty/Kitty/Windows Terminal, and desktop notifications for slow commands (`--notify-sec`).
+  2. **Zero-subshell Kubernetes context, namespace & 🚨 prod warning (`kube_fast` / `kube_namespace_prod`)**: Reads `$KUBECONFIG` / `~/.kube/config` directly in pure Bash (<1 ms, Bash 3.2+ compatible, removes `yq` dependency, shortens GKE context names, appends active `(namespace)`, and highlights production clusters in red with `🚨`).
+  3. **Single-pass Git + WSL2/Monorepo + Advanced State + Dynamic Colors (`git_single_pass` / `git_wsl_fast` / `git_advanced_state`)**: Consolidates 3 `git status` calls into one, scans `.git/config` in pure Bash to avoid extra forks, shows exact `↑N ↓M` counts plus `REBASE`, `MERGE`, `CHERRY`, `BISECT`, and `worktree` (`⎇`) state, optionally colors `GIT` dynamically (amber dirty / red rebase), auto-skips untracked scans on WSL2 `/mnt/*`, supports `--git-timeout`, `NAME_MAX`-safe `--async-git` background cache (`/dev/shm`), and `--max-git` branch truncation.
+  4. **24 Zero-Fork Telemetry, Dev, VCS & Custom Segments**: `USER`, `HOST` (with optional SSH hostname color hashing), `PWD` (with `--pwd-style fish`), `GIT`, `JJ` (Jujutsu VCS), `PYENV`, `TF`, `KUBE`, `CLOCK`, `STATUS`, `DURATION` (locale-safe for both dot and comma `$EPOCHREALTIME`, e.g. `pt_BR.UTF-8`), `AWS`, `GCP`, `DOCKER`, `NODE`, `SSH`, `JOBS`, `DIRENV`, `SHLVL`/`NIX`, `RUST`, `GO`, `BATTERY`, `SUDO`, and `CUSTOM`.
+  5. **Right-Aligned Top Prompt (`right_prompt`), OSC 133, OSC 7 CWD & OSC 9/99 Notifications**: Pure-Bash `RPROMPT` top bar (`--right-format`, `--right-fill`) with emoji-aware visual width calculation, native `OSC 133;A/B/C/D;<exit>` prompt navigation, `OSC 7` directory inheritance for new tabs/splits in WezTerm/Ghostty/Kitty/Windows Terminal, and desktop notifications for slow commands (`--notify-sec`).
   6. **Accurate Virtualenv & Conda (`pyenv_enhanced`)**: Pure-Bash `$VIRTUAL_ENV_PROMPT`, `pyvenv.cfg` `prompt`, `$CONDA_DEFAULT_ENV`, parent-dir naming for `.venv`, and `--max-pyenv` truncation.
   7. **Independent Ending Separator (`dual_separator`) & 256-Color Parity (`color_256_parity`)**: Supports `separator_char_end`, 0–255 & all 16 named colors, and `italic`/`regular` text styles.
   8. **Safe `PROMPT_COMMAND` Chaining & TrueColor 24-bit (`hook_chaining` / `truecolor_24bit`)**: Chains `PROMPT_COMMAND` (Bash 5.1+ arrays & strings) and moves color reset to `PS0` (no `trap DEBUG` hijacking — 100% compatible with `direnv`, `zoxide`, `atuin`, `ble.sh`, `mise`, and VS Code), supports exact `#RRGGBB` TrueColor with automatic 256-color fallback, responsive compact layout on narrow `tmux`/VS Code splits (`--compact-width`), and `set -u` safety.
-  9. **Unicode `PS1` Guard (`utf8_ps1_guard`), Non-Interactive Safety (`interactive_guard`), Terminal Mode Sanitizer (`terminal_sanitize`), `doctor --fix` & Greeter Fixes**: Prevents `\uE0B0` turning into `usernameE0B0` under `LC_ALL=C`, protects `scp`/`sftp`/`rsync`, automatically clears leaked SSH/TUI mouse tracking (`35;col;rowM`) & focus events on prompt return, auto-repairs CRLF/patches with `doctor --fix`, adds `--ascii-safe`, `--sync-root`, `--sync-greeter`, plus AMD `k10temp`/`Tctl` CPU temp & ZFS ARC RAM fixes for `synth-shell-greeter`.
-- **Safe Atomic Writes & Backups**: Preserves your custom layout, padding, and Git symbols when switching colors, with automatic timestamped backups in `~/.config/synth-shell/backups/` and portable JSON presets (`export` / `import`).
+  9. **Unicode `PS1` Guard (`utf8_ps1_guard`), Non-Interactive Safety (`interactive_guard`), Terminal Mode Sanitizer (`terminal_sanitize`), `doctor --fix` & Greeter Fixes**: Prevents `\uE0B0` turning into `usernameE0B0` under `LC_ALL=C`, protects `scp`/`sftp`/`rsync`, automatically clears leaked SSH/TUI mouse tracking (`35;col;rowM`) & focus events on prompt return, auto-repairs CRLF/patches with `doctor --fix`, adds `--ascii-safe`, full 24-segment `--sync-root`, `--sync-greeter`, plus AMD `k10temp`/`Tctl` CPU temp & ZFS ARC RAM fixes for `synth-shell-greeter`.
+- **Safe Atomic Writes, Escaping & Backups**: Shell-injection-safe Bash escaping & color validation, preserves your custom layout/padding/Git symbols when switching themes, automatic timestamped backups in `~/.config/synth-shell/backups/`, and full portable JSON presets (`export` / `import`).
 
 ---
 
@@ -109,7 +109,7 @@ Both `synth-shell-theme` (primary CLI) and `synth-shell-separator` (dedicated se
 
 ### Initialize Runtime Enhancements
 
-After installing `synth-shell` (or use `--install` to install upstream `synth-shell` automatically), apply the 4 runtime speed & compatibility patches once:
+After installing `synth-shell` (or use `--install` to install upstream `synth-shell` automatically), apply all runtime speed, telemetry, and safety patches once:
 
 ```bash
 synth-shell-theme init
@@ -212,6 +212,15 @@ source ~/.config/synth-shell/synth-shell-prompt.sh
 | Variable | Description |
 | :--- | :--- |
 | `SYNTH_SHELL_CONFIG_DIR` | Override configuration directory (defaults to `~/.config/synth-shell`). |
+| `SYNTH_CUSTOM_BADGE` | Dynamic text displayed in the `CUSTOM` prompt segment (overrides static `--custom-badge`). |
+
+---
+
+## Security & Reliability
+
+- **Zero External Dependencies**: Runs purely on Python `>= 3.10` standard library and pure-Bash hooks (tested across Linux, macOS Bash 3.2, and Windows).
+- **Safe Config Serialization**: Escapes `\`, `"`, `$`, `` ` ``, and CR/LF when writing `synth-shell-prompt.config` and validates custom theme color tokens so user inputs cannot inject shell commands.
+- **Localhost Web Studio Guard**: All `POST` API routes enforce `Content-Type: application/json`, same-origin `Origin`, and `Sec-Fetch-Site` checks, and confine Starship exports to `.toml` files inside `~/.config` or `$SYNTH_SHELL_CONFIG_DIR`.
 
 ---
 
